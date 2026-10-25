@@ -1,0 +1,34 @@
+{
+  "name": "dsh-harnessams-smart-ana-sim",
+  "version": "0.1.0",
+  "description": "HarnessAMS-SmartAnaSim: run simulations (local ngspice channel, code-driven netlist assembly with checks, sweep-result HTML reports)",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "src/",
+    "scripts/",
+    "cordis.patch.yml",
+    "!**/__pycache__",
+    "!**/*.pyc"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "dsh": "0.2.1-rc.2"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.0.1-rc.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-tools": "0.0.1-rc.1"
+  }
+}

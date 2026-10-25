@@ -1,0 +1,5 @@
+# SmartAnaSim bundle patch (same constraints as the top plugin: whole-row replacement,
+# stable unique row ids, name references the package name).
+- insert:
+  - id: harnessams-smart-ana-sim
+    name: dsh-harnessams-smart-ana-sim
