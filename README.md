@@ -54,7 +54,7 @@ offline reports); relative values resolve against the config file's directory.
 
 ## Status
 
-Implemented (M1–M2 milestone scope), smoke-tested against a verified sky130 OTA baseline (9-point PVT batch, zero deviation from reference values). The batch skeleton is ported from a prior internal Spectre-based sweep worker (`@@PARAM@@` templating + per-point `point_meta.json` + progress file); the dashboard follows the hard rules of its report generator, adapted to ngspice output.
+Implemented (M1–M2 milestone scope), smoke-tested against a verified sky130 OTA baseline (9-point PVT batch, zero deviation from reference values). The batch skeleton draws on [Arcadia-1/virtuoso-bridge-lite](https://github.com/Arcadia-1/virtuoso-bridge-lite) (`@@PARAM@@` templating + per-point `point_meta.json` + progress file); the dashboard follows the hard rules of its report generator, adapted to ngspice output.
 
 ## License
 
