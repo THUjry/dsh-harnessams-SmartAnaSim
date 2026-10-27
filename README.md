@@ -7,7 +7,7 @@
 
 1. Local ngspice channel (the remote channel is deferred, along with remote spectre/VerilogA validation — decision of 2026-10-25);
 2. Built-in netlist format checks: a broken netlist never reaches the simulator;
-3. Sweep-result HTML reports: the loop does not close without them; embeddable in the top-level console. Generated reports use a local `plotly.min.js` when one is discoverable (an ancestor `assets/` or `src/assets/` directory, a sibling `dsh-harnessams` install under `node_modules/`, or the workspace `plotly_asset` field; the single shared copy lives inside the `dsh-harnessams` package in the top-level HarnessAMS repo) and fall back to the Plotly CDN otherwise;
+3. Sweep-result HTML reports: the loop does not close without them; embeddable in the top-level console. Generated reports load `plotly.min.js` from a single workspace-level copy (`<workspace_root>/assets/plotly.min.js`, seeded on demand by the generator from a discoverable local source — an ancestor `assets/` or `src/assets/` directory, a sibling `dsh-harnessams` install under `node_modules/`, or the workspace `plotly_asset` field; the master copy lives inside the `dsh-harnessams` package in the top-level HarnessAMS repo) and fall back to the Plotly CDN when no local source exists;
 4. Netlists are assembled by code, hard-isolating the PDK: user code never touches PDK files — the assembly layer is the only channel;
 5. Input type/dimension checks: lengths accept only u/n, frequencies only G/M/k, counters must be integers; violations are rejected at the assembly layer;
 6. Bias-voltage range checks: every bias must stay below Vdd; violations are rejected at the assembly layer;
@@ -21,7 +21,7 @@ scripts/               pipeline scripts, spawned as fresh python processes:
                          sweep_worker_ngspice.py  local ngspice batch sweep skeleton
                          checks.py                assembly-layer checks
                          collect_results.py       results.json aggregation
-                         gen_sweep_report.py      interactive HTML report (local-first Plotly)
+                         gen_sweep_report.py      interactive HTML report (workspace-level shared Plotly)
                          trash.py                 safety-by-default trash
 tests/                 starter unit tests (node:test + a python compile smoke; run: node --test)
 cordis.patch.yml       bundle patch (insert row)
@@ -36,16 +36,18 @@ CHANGELOG.md / SECURITY.md / PUBLISH.md
 - `cordis.patch.yml` — the bundle patch (insert row);
 - npm auto-included files: `package.json`, `README.md`, `LICENSE`.
 
-Deliberately NOT shipped: `plotly.min.js` (the single shared copy for the project lives in
-the `dsh-harnessams` package; reports find it via the discovery chain or fall back to the
-CDN) and `tests/`. `PUBLISH.md` holds the must-contain / must-not-contain tarball checks.
+Deliberately NOT shipped: `plotly.min.js` (the master copy lives inside the
+`dsh-harnessams` package; reports reference the workspace-level copy the generator
+seeds from it, or fall back to the CDN) and `tests/`. `PUBLISH.md` holds the
+must-contain / must-not-contain tarball checks.
 
 ## Workspace convention
 
 The pipeline locates a workspace `harnessams.json` by walking upward from the run directory
 (bare form, or inside `harnessams-workspace/`). The config provides `ngspice_cmd`, `pdk_lib`,
-`trash_dir`, `sim_scripts_dir`, and optionally `plotly_asset` (a local plotly.min.js for
-offline reports); relative values resolve against the config file's directory.
+`trash_dir`, `sim_scripts_dir`, and optionally `plotly_asset` (a local plotly.min.js usable
+as the seed source for the workspace-level report asset); relative values resolve against
+the config file's directory.
 
 ## Simulation environment
 

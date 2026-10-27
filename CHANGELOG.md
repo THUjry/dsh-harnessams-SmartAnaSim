@@ -19,15 +19,18 @@ First release (stage 1 scope; not yet published to npm).
   - `checks.py` — assembly-layer checks (netlist format / parameter dimensions / bias < Vdd).
   - `collect_results.py` — per-round aggregation into `results.json` with summary statistics.
   - `gen_sweep_report.py` — self-contained interactive HTML report (Plotly, four sections,
-    round selector); local-first Plotly with a single shared copy (see below).
+    round selector); workspace-level shared Plotly (see below).
   - `trash.py` — safety-by-default trash (list / restore / purge).
-- Plotly resolution, single shared copy: reports use a local `plotly.min.js` found via an
-  explicit `--plotly` path, three ancestor-probed candidates (`assets/`,
-  `src/assets/`, `node_modules/dsh-harnessams/assets/`), or the workspace
-  `harnessams.json` `plotly_asset` field; the CDN is the fallback (`--plotly-cdn` forces it).
-  The single copy for this project lives inside the `dsh-harnessams` package in the
-  top-level HarnessAMS repo (`src/assets/plotly.min.js`) and ships with its tarball —
-  this package intentionally ships none.
+- Plotly delivery, single workspace-level copy: the generator seeds
+  `<workspace_root>/assets/plotly.min.js` from an explicit `--plotly` path, four
+  ancestor-probed candidates (`assets/`, `src/assets/`,
+  `node_modules/dsh-harnessams/assets/`, `dsh-harnessams/assets/`), or the workspace
+  `harnessams.json` `plotly_asset` field (refreshing on size mismatch), and every
+  report references it with a workspace-relative `src`; the CDN is the fallback
+  (`--plotly-cdn` forces it). The master copy lives inside the `dsh-harnessams` package
+  in the top-level HarnessAMS repo (`src/assets/plotly.min.js`) and ships with its
+  tarball — this package intentionally ships none. Decision record: top-level repo
+  `docs/decisions.md` (D-001).
 - Workspace convention: `harnessams.json` is discovered by walking upward (bare form, or
   inside `harnessams-workspace/`); relative path fields resolve against the config file's
   directory; `trash_dir` is honored when present.

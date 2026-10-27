@@ -22,11 +22,13 @@ run everything from here.
 4. Post-publish verification
    - `dsh plugin --profile web add dsh-harnessams-smart-ana-sim`, restart the profile
      (`dsh --profile web`), confirm the six `sim_*` tools register.
-   - Re-generate a sweep report from an existing workspace run: when a local copy is
-     discovered (an ancestor `assets/` or `src/assets/`, a sibling `dsh-harnessams`
-     install, or the workspace `plotly_asset` field) it lands beside the report and the
-     HTML has no `cdn.plot.ly` reference; a standalone install without any local copy
-     falls back to the CDN, which is expected, not a failure.
+   - Re-generate a sweep report from an existing workspace run: when a local seed
+     source is discovered (an ancestor `assets/` or `src/assets/`, a sibling
+     `dsh-harnessams` install, or the workspace `plotly_asset` field) the
+     workspace-level `<workspace_root>/assets/plotly.min.js` appears and the HTML
+     references it with a relative src (no `cdn.plot.ly` reference); a standalone
+     install without any local source falls back to the CDN, which is expected,
+     not a failure.
 5. Aggregate bundle
    - Only after **both** plugin packages are published: bump and publish
      `dsh-harnessams-suite` from the top-level `HarnessAMS` repo (it pins the exact

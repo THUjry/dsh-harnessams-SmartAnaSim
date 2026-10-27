@@ -18,13 +18,14 @@ Mechanisms and hard rules:
   cannot freeze the page;
 - robust num()/show() formatters (null / strings / missing values all render '-').
 
-Plotly loading is local-first with a single shared copy (no per-package duplication).
-Resolution order: (1) an explicit --plotly path; (2) an assets/plotly.min.js found in the
-script's ancestor directories (a package-local assets/ or a repo-level shared assets/);
-(3) the workspace harnessams.json plotly_asset field (relative values resolve against the
-config file's directory); (4) the CDN as fallback. A local copy is placed beside the
-report and referenced with a relative src, making the report folder self-contained and
-offline-capable. --plotly-cdn forces the CDN.
+Plotly loading uses a single workspace-level copy (no per-report duplication): the
+generator seeds <workspace_root>/assets/plotly.min.js (workspace root = the directory
+holding harnessams.json) from the best local source -- an explicit --plotly path, an
+assets/plotly.min.js found in the script's ancestor directories (package-local assets/,
+the shipped dsh-harnessams assets/, an installed node_modules sibling), or the workspace
+harnessams.json plotly_asset field -- refreshing it when the size differs, and every
+report references it with a workspace-relative src, so reports open offline. The CDN is
+the fallback when no local source exists; --plotly-cdn forces it.
 
 Input: --project <demo project dir> (containing sweep/Round*/top/results.json + cell_meta.json)
 Output: <project>/Analysis/<project>_report.html + <project>/Analysis/data/Round<N>.js
@@ -46,6 +47,7 @@ HEAD = """<!DOCTYPE html>
 <meta charset="utf-8">
 <title>__CASCADE__ - sweep report</title>
 <script src="__PLOTLY__"></script>
+<script>window.Plotly || document.write('<script src="/harnessams/assets/plotly.min.js"><\\/script>');</script>
 <style>
   body { font-family: "Segoe UI", system-ui, sans-serif; margin: 0 24px 48px; color: #1c2733; }
   h1 { font-size: 22px; margin: 18px 0 4px; }
@@ -328,45 +330,66 @@ def load_workspace_config(start_dir):
 
 
 def resolve_plotly_src(force_cdn, out_dir, project, plotly_arg=None):
-    """Local-first Plotly resolution with a single shared copy. Search order:
-    1. an explicit --plotly path;
-    2. the script's ancestor directories, each probed for three candidates:
+    """Workspace-level shared Plotly copy. The single copy lives at
+    <workspace_root>/assets/plotly.min.js (workspace root = the directory holding
+    harnessams.json). Seed source search order:
+    1. an explicit --plotly path (seed override);
+    2. the script's ancestor directories, each probed for four candidates:
        assets/plotly.min.js (package-local assets/), src/assets/plotly.min.js (the
-       repo-level shared copy inside the dsh-harnessams package), and
-       node_modules/dsh-harnessams/assets/plotly.min.js (an installed sibling package);
+       shipped copy inside the dsh-harnessams package), node_modules/dsh-harnessams/
+       assets/plotly.min.js (an installed sibling package), and dsh-harnessams/
+       assets/plotly.min.js (an ancestor that is a node_modules directory);
     3. the workspace harnessams.json plotly_asset field (relative values resolve
-       against the config file's directory);
-    4. CDN fallback (--plotly-cdn forces it).
-    A found local copy is placed beside the report and referenced with a relative src,
-    so the report folder stays self-contained and offline."""
-    if not force_cdn:
-        local = plotly_arg
-        if not local:
-            d = os.path.dirname(os.path.abspath(__file__))
-            for _ in range(5):
-                for cand in (os.path.join(d, "assets", "plotly.min.js"),
-                             os.path.join(d, "src", "assets", "plotly.min.js"),
-                             os.path.join(d, "node_modules", "dsh-harnessams",
-                                          "assets", "plotly.min.js")):
-                    if os.path.isfile(cand):
-                        local = cand
-                        break
-                if local:
+       against the config file's directory).
+    A missing or size-stale workspace copy is (re-)seeded from the found source, and
+    the report references it with a workspace-relative src (always same-drive, so it
+    opens offline; --out on another drive falls back to a copy beside the report).
+    With no local source at all the CDN is the fallback; --plotly-cdn forces it."""
+    if force_cdn:
+        return PLOTLY_CDN
+    cfg, cfg_dir = load_workspace_config(project)
+    if cfg_dir is None:
+        return PLOTLY_CDN
+    ws_asset = os.path.join(cfg_dir, "assets", "plotly.min.js")
+    seed = plotly_arg
+    if not seed:
+        d = os.path.dirname(os.path.abspath(__file__))
+        for _ in range(5):
+            for cand in (os.path.join(d, "assets", "plotly.min.js"),
+                         os.path.join(d, "src", "assets", "plotly.min.js"),
+                         os.path.join(d, "node_modules", "dsh-harnessams",
+                                      "assets", "plotly.min.js"),
+                         os.path.join(d, "dsh-harnessams",
+                                      "assets", "plotly.min.js")):
+                if os.path.isfile(cand):
+                    seed = cand
                     break
-                parent = os.path.dirname(d)
-                if parent == d:
-                    break
-                d = parent
-        if not local:
-            cfg, cfg_dir = load_workspace_config(project)
-            field = cfg.get("plotly_asset") if cfg else None
-            if field:
-                local = field if os.path.isabs(field) else os.path.normpath(
-                    os.path.join(cfg_dir, field))
-        if local and os.path.isfile(local):
-            shutil.copyfile(local, os.path.join(out_dir, "plotly.min.js"))
-            return "plotly.min.js"
-    return PLOTLY_CDN
+            if seed:
+                break
+            parent = os.path.dirname(d)
+            if parent == d:
+                break
+            d = parent
+    if not seed:
+        field = cfg.get("plotly_asset") if cfg else None
+        if field:
+            seed = field if os.path.isabs(field) else os.path.normpath(
+                os.path.join(cfg_dir, field))
+    seed_ok = bool(seed) and os.path.isfile(seed)
+    if os.path.isfile(ws_asset):
+        if seed_ok and os.path.getsize(ws_asset) != os.path.getsize(seed):
+            shutil.copyfile(seed, ws_asset)      # size mismatch = plotly version bump, refresh
+    elif seed_ok:
+        os.makedirs(os.path.dirname(ws_asset), exist_ok=True)
+        shutil.copyfile(seed, ws_asset)
+    else:
+        return PLOTLY_CDN
+    try:
+        return os.path.relpath(ws_asset, out_dir).replace(os.sep, "/")
+    except ValueError:
+        # --out on a different drive than the workspace: no relative route, keep a sibling copy
+        shutil.copyfile(ws_asset, os.path.join(out_dir, "plotly.min.js"))
+        return "plotly.min.js"
 
 
 def find_rounds(project_dir, only=None):
