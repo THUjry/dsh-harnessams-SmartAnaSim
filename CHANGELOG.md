@@ -3,6 +3,37 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow semver.
 
+## [Unreleased]
+
+### Added
+
+- S-parameter local reading and computation (2026-10-30, tools-only by design — no UI);
+  tool surface grows from six to eight:
+  - `snp_read` — parse Touchstone v1 (.s1p..sNp) / Spectre psfascii sp.sp (S/Y/Z
+    paramtype) / snp_read params CSV (round-trippable); dump per-frequency S/Z/Y
+    curve CSV with a metadata header, plus header info, band stats, reciprocity
+    diagnostic and max |Sij|.
+  - `snp_extract` — device parameter extraction from the same inputs:
+    transformer (L1/L2/Q1/Q2/k from Z, two SRFs, Gmax; 2/3/4/5/6 ports incl.
+    center taps), inductor (L/Q/SRF; 1/2/3 ports), tl (Zc, gamma*l, theta,
+    optional eps_eff/alpha via length; 2 ports or 4-port differential),
+    coupled_tl (even/odd modal Z0e/Z0o/theta/k, f(theta=90), and a theory_ok
+    0/1 flag on the relative modal off-block residual; 4 ports or 8-port
+    differential). Port model: single-ended sides are one port (cold end
+    grounded in the EM setup), differential sides two; `coil*` remap sides,
+    `ct*` name taps, `--se` grounds ports during extraction (incl. the
+    shorted-secondary leakage view). Missing or unphysical port mappings are
+    auto-adjusted against physicality checks and every result echoes a
+    `port_plan` for confirmation.
+  - Scripts: `scripts/snp_common.py` (loaders, conversions, port reductions),
+    `scripts/snp_read.py`, `scripts/snp_extract.py`; numeric backend is numpy
+    with the bundled `assets/numfallback.py` pure-stdlib fallback when the
+    system python lacks numpy (forced by `SNP_FORCE_FALLBACK=1` for testing).
+  - Tests: synthetic round-trip fixtures (`tests/synth_helper.py`) and
+    anonymized real EM regression data (`tests/data/`: EMX .s4p, psfascii
+    sp.sp, 5-port .s5p) whose extracted values reproduce the reference
+    implementation's key results bit-for-bit; `node --test` 22/22.
+
 ## [0.1.0] - 2026-10-25
 
 First release (stage 1 scope; not yet published to npm).

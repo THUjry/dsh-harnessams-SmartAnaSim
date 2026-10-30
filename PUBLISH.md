@@ -11,7 +11,8 @@ run everything from here.
      top-level `HarnessAMS` repo (`docs/compatibility.md`).
 2. Package content check (must-contain AND must-not-contain)
    - `npm pack --dry-run` (run from the repo root, which **is** the package). The tarball
-     must contain exactly: `src/`, `scripts/` (all five pipeline `.py` files),
+     must contain exactly: `src/`, `scripts/` (all eight `.py` files: five pipeline +
+     `snp_common.py` / `snp_read.py` / `snp_extract.py`), `assets/numfallback.py`,
      `cordis.patch.yml`, plus the npm auto-included `package.json`, `README.md`, `LICENSE`.
    - Must NOT contain: `tests/`, any `__pycache__/` or `*.pyc` (the `files` negations
      enforce this — re-check after touching the whitelist), and `plotly.min.js` in any
@@ -21,7 +22,8 @@ run everything from here.
    - `npm publish` from this directory.
 4. Post-publish verification
    - `dsh plugin --profile web add dsh-harnessams-smart-ana-sim`, restart the profile
-     (`dsh --profile web`), confirm the six `sim_*` tools register.
+     (`dsh --profile web`), confirm the eight tools register (six `sim_*` plus
+     `snp_read` / `snp_extract`).
    - Re-generate a sweep report from an existing workspace run: when a local seed
      source is discovered (an ancestor `assets/` or `src/assets/`, a sibling
      `dsh-harnessams` install, or the workspace `plotly_asset` field) the
