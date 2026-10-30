@@ -12,6 +12,7 @@
   "files": [
     "src/",
     "scripts/",
+    "assets/",
     "cordis.patch.yml",
     "!**/__pycache__",
     "!**/*.pyc"

@@ -8,15 +8,18 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const execFileAsync = promisify(execFile)
-const SCRIPTS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts')
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+const SCRIPTS = path.join(HERE, '..', 'scripts')
+const ASSETS = path.join(HERE, '..', 'assets')
 
 test('pipeline scripts compile with the system python', async () => {
   const files = [
     'sweep_worker_ngspice.py', 'checks.py', 'collect_results.py',
     'gen_sweep_report.py', 'trash.py',
-  ]
+    'snp_common.py', 'snp_read.py', 'snp_extract.py',
+  ].map((f) => path.join(SCRIPTS, f)).concat([path.join(ASSETS, 'numfallback.py')])
   const { stdout } = await execFileAsync(
-    'python', ['-m', 'py_compile', ...files.map((f) => path.join(SCRIPTS, f))],
+    'python', ['-m', 'py_compile', ...files],
     { timeout: 60_000 },
   )
   assert.equal(stdout, '')

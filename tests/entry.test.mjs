@@ -11,7 +11,7 @@ test('plugin metadata', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('apply registers the six sim_* tools', async () => {
+test('apply registers the eight sim_*/snp_* tools', async () => {
   const registered = []
   const ctx = {
     effect: (fn) => { fn() },
@@ -20,6 +20,7 @@ test('apply registers the six sim_* tools', async () => {
   await apply(ctx)
   await new Promise((r) => setTimeout(r, 500))
   assert.deepEqual(registered.sort(), [
-    'sim_assemble', 'sim_collect', 'sim_progress', 'sim_report', 'sim_run_sweep', 'sim_trash',
+    'sim_assemble', 'sim_collect', 'sim_progress', 'sim_report', 'sim_run_sweep',
+    'sim_trash', 'snp_extract', 'snp_read',
   ])
 })

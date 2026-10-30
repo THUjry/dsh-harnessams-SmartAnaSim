@@ -147,6 +147,70 @@ const TOOLS = [
       return { ok: true, output: stdout.trim() }
     },
   },
+  {
+    name: 'snp_read',
+    description: 'Read an S-parameter file (Touchstone .s1p..sNp / Spectre psfascii sp.sp / snp_read params CSV) and dump per-frequency S/Z/Y curves to a CSV, plus header info and diagnostics (reciprocity error, max |Sij|). Extraction of device parameters is a separate tool (snp_extract).',
+    parameters: {
+      file: { type: 'string', required: true, description: 'Input file path (.sNp / sp.sp / params CSV)' },
+      param: { type: 'string', required: false, description: 'Matrix kind to dump: S | Z | Y (default S)' },
+      out_dir: { type: 'string', required: false, description: 'Output directory (default: beside the input file)' },
+    },
+    async execute(args) {
+      const argv = ['--file', String(args.file)]
+      if (args.param) argv.push('--param', String(args.param))
+      if (args.out_dir) argv.push('--out-dir', String(args.out_dir))
+      const { stdout } = await py('snp_read.py', argv, 120_000)
+        .catch((e) => { throw new Error(`snp_read failed: ${cliError(e)}`) })
+      const fs = await import('node:fs')
+      const stem = path.basename(String(args.file)).replace(/\.[^.]+$/, '')
+      const dir = args.out_dir ? path.resolve(args.out_dir) : path.dirname(path.resolve(String(args.file)))
+      let summary = null
+      try { summary = JSON.parse(fs.readFileSync(path.join(dir, `${stem}_read.json`), 'utf8')) } catch { /* script already printed */ }
+      return { ok: true, output: stdout.trim(), summary }
+    },
+  },
+  {
+    name: 'snp_extract',
+    description: 'Extract device parameters from an S-parameter file (same input formats as snp_read). Types: transformer (L1/L2/Q1/Q2/k, two SRFs, Gmax; 2/3/4/5/6 ports), inductor (L/Q/SRF; 1/2/3 ports), tl (Zc/gamma*l/theta, optional eps_eff via length_m; 2 ports, or 4 ports differential), coupled_tl (even/odd modal Z0e/Z0o/theta/k + theory_ok flag; 4 ports, or 8 ports differential). Port model: a side listed with 1 port in coil/coil1/coil2 is single-ended (cold end grounded in the EM setup), 2 ports = differential; ct1/ct2/ct name the center-tap port; --se grounds listed ports during extraction (V=0; grounding a whole side = shorted-secondary leakage view). Default topologies by port count: transformer 2:(1)+(2), 3:(1,2)+(3), 4:(1,2)+(3,4), 5:(1,2)+ct1=5+(3,4), 6:+ct2=6; inductor 1:(1), 2:(1,2), 3:(1,2)+ct=3; tl 4p: pairs (1,2)+(3,4); coupled_tl 8p: pairs (1,2)(3,4)(5,6)(7,8). Wrong/unspecified mappings are auto-adjusted against physicality checks (L>0, |k|<=1, Re(Z0)>0 resistive-dominant, theta increasing); the result JSON echoes a port_plan to confirm before trusting the numbers.',
+    parameters: {
+      file: { type: 'string', required: true, description: 'Input file path (.sNp / sp.sp / params CSV)' },
+      type: { type: 'string', required: true, description: 'tl | coupled_tl | transformer | inductor' },
+      freq_hz: { type: 'number', required: false, description: 'Extraction frequency in Hz (default: band geometric midpoint)' },
+      coil1: { type: 'string', required: false, description: 'Side-1 / near differential pair ports, e.g. "1,2"; a single port = single-ended side' },
+      coil2: { type: 'string', required: false, description: 'Side-2 / far differential pair ports' },
+      coil3: { type: 'string', required: false, description: 'coupled_tl 8-port: third differential pair' },
+      coil4: { type: 'string', required: false, description: 'coupled_tl 8-port: fourth differential pair' },
+      coil: { type: 'string', required: false, description: 'Inductor coil ports (1 or 2)' },
+      ct1: { type: 'number', required: false, description: 'Transformer primary center-tap port number' },
+      ct2: { type: 'number', required: false, description: 'Transformer secondary center-tap port number' },
+      ct: { type: 'number', required: false, description: 'Inductor center-tap port number' },
+      se: { type: 'string', required: false, description: 'Ports to ground during extraction (V=0), comma list, e.g. "2" or "2,4"; a tap number grounds the tap' },
+      length_m: { type: 'number', required: false, description: 'Physical length in meters (tl: enables eps_eff and alpha per length)' },
+      theory_gate: { type: 'number', required: false, description: 'coupled_tl relative off-block residual gate for theory_ok (default calibrated to 4x a validated reference coupler)' },
+      out_dir: { type: 'string', required: false, description: 'Output directory (default: beside the input file)' },
+    },
+    async execute(args) {
+      const argv = ['--file', String(args.file), '--type', String(args.type)]
+      for (const [k, v] of Object.entries(args)) {
+        if (['file', 'type', 'out_dir'].includes(k) || v === undefined || v === null || v === '') continue
+        argv.push(`--${k.replace(/_/g, '-')}`, String(v))
+      }
+      if (args.out_dir) argv.push('--out-dir', String(args.out_dir))
+      const { stdout } = await py('snp_extract.py', argv, 300_000)
+        .catch((e) => { throw new Error(`snp_extract failed: ${cliError(e)}`) })
+      const fs = await import('node:fs')
+      const stem = path.basename(String(args.file)).replace(/\.[^.]+$/, '')
+      const dir = args.out_dir ? path.resolve(args.out_dir) : path.dirname(path.resolve(String(args.file)))
+      let summary = null
+      let portPlan = null
+      try {
+        const j = JSON.parse(fs.readFileSync(path.join(dir, `${stem}_extract_${args.type}.json`), 'utf8'))
+        summary = j.summary
+        portPlan = j.port_plan
+      } catch { /* script already printed */ }
+      return { ok: true, output: stdout.trim(), summary, port_plan: portPlan }
+    },
+  },
 ]
 
 export const name = 'dsh-harnessams-smart-ana-sim'
