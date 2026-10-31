@@ -1,11 +1,13 @@
-// Generic LSF (bsub) tools: submit a worker script, poll the job, fetch artifacts.
-// Nothing in this file names a simulator — a Spectre run is just a worker choice.
+// Generic remote batch tools: submit a worker script through LSF (bsub), or run
+// the same worker directly on the remote host (scheduler=none, the node-local
+// foreground mode), then poll and fetch artifacts. Nothing in this file names a
+// simulator — a Spectre run is just a worker choice.
 import fs from 'node:fs'
 import path from 'node:path'
 import { SCRIPTS_DIR, readJsonIfExists, resolveDir } from '../py.js'
 import { downloadFile, execRemote, resolveTarget, shq, uploadFile } from '../remote.js'
 import {
-  DEFAULT_INCLUDES, buildSubmitCommand, collectRunFiles, countFetched,
+  DEFAULT_INCLUDES, buildDirectCommand, buildSubmitCommand, collectRunFiles, countFetched,
   defaultRemotePython, defaultRemoteScriptsDir, extractArchive, fetchCommand,
   listCommand, parseJobId, parsePollOutput, parseRemoteList, pluginScripts,
   pollCommand, postSubmitCommand, readJob, readWorkspaceConfig, remoteJoin,
@@ -30,8 +32,9 @@ export function bsubTools(ctx) {
   return [
     {
       name: 'bsub_submit',
-      description: 'Submit a remote LSF batch through dsh-remote: uploads the run directory (template + '
-        + 'sweep_config.json + metadata) and the plugin worker scripts, then runs the chosen worker under bsub. '
+      description: 'Submit a remote batch through dsh-remote: uploads the run directory (template + '
+        + 'sweep_config.json + metadata) and the plugin worker scripts, then either runs the chosen worker under '
+        + 'bsub (scheduler="lsf", default) or directly on the target host (scheduler="none", node-local foreground). '
         + 'The worker path is plugin-relative (e.g. "spectre/spectre_sweep_worker.py") or absolute on the remote; '
         + 'worker_args are passed through. Writes .bsub_job.json in the run directory for bsub_poll/bsub_fetch. '
         + 'Requires a live session in the target machine\'s remote project (or a caller session already inside it).',
@@ -45,6 +48,9 @@ export function bsubTools(ctx) {
         remote_scripts_dir: { type: 'string', description: 'Remote scripts root (default: <remotePath>/.harnessams/scripts or workspace remote_scripts_dir)' },
         files: { type: 'array', items: { type: 'string' }, description: 'Run-dir files to upload (default: top-level regular files)' },
         queue: { type: 'string', description: 'LSF queue (default normal)' },
+        scheduler: { type: 'string', enum: ['lsf', 'none'],
+          description: 'lsf (default) submits the worker through bsub; none runs the same worker directly on the '
+            + 'remote host (node-local foreground mode, no LSF) and waits for it to finish' },
         job_name: { type: 'string', description: 'bsub -J name (default hams-<run dir name>)' },
         sync_scripts: { type: 'boolean', description: 'Upload scripts/ to the remote scripts root (default true; pass false after a successful sync)' },
         overwrite: { type: 'boolean', description: 'Allow submitting into a remote directory that already has point_meta.json files' },
@@ -104,8 +110,53 @@ export function bsubTools(ctx) {
         }
 
         const remotePython = args.remote_python || wsConfig.remote_python || defaultRemotePython()
+        const scheduler = args.scheduler === 'none' ? 'none' : 'lsf'
         const queue = args.queue || 'normal'
         const jobName = args.job_name || `hams-${path.basename(runDir)}`
+        if (scheduler === 'none') {
+          // Node-local foreground mode: no bsub, no queue — run the worker on
+          // the machine's login host and wait for it, exactly like an
+          // interactive ssh run. poll/fetch still work through the recorded
+          // job file (bsub_poll scheduler=none reads the progress files).
+          const command = buildDirectCommand({
+            remoteDir,
+            python: remotePython,
+            workerPath: remoteWorker,
+            workerArgs: args.worker_args || [],
+          })
+          const ran = await execRemote(ctx, target.agent, command, { timeoutMs: 600_000 })
+          const jobId = `direct-${Date.now()}`
+          const job = {
+            machine_id: args.machine_id || target.machine?.id || null,
+            machine_name: target.machine?.name || null,
+            remote_dir: remoteDir,
+            scripts_dir: scriptsRoot,
+            worker: remoteWorker,
+            worker_args: args.worker_args || [],
+            job_id: jobId,
+            queue: null,
+            remote_python: remotePython,
+            scheduler: 'none',
+            submitted_at: new Date().toISOString(),
+            total_points: totalFromConfig(runDir),
+          }
+          writeJob(runDir, job)
+          if (!ran.ok) {
+            throw new Error(`direct run failed (exit ${ran.exitCode}): `
+              + `${(ran.stderr || ran.stdout || ran.text || '').slice(0, 1200)}`)
+          }
+          return {
+            ok: true,
+            job_id: jobId,
+            state: 'completed',
+            scheduler: 'none',
+            remote_dir: remoteDir,
+            scripts_dir: scriptsRoot,
+            warnings: [],
+            job_file: path.join(runDir, '.bsub_job.json'),
+            output: (ran.stdout || '').trim().slice(0, 4000),
+          }
+        }
         const command = buildSubmitCommand({
           remoteDir,
           queue,

@@ -1,5 +1,6 @@
-// Generic bsub (LSF) tools: target resolution, upload/submit/poll/fetch against a
-// mocked dsh-remote tool shell (no network, no SSH, no LSF required).
+// Generic remote batch tools: target resolution, upload/submit/poll/fetch against
+// a mocked dsh-remote tool shell (no network, no SSH, no LSF required). The
+// scheduler=none path is the node-local foreground mode (no bsub).
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
@@ -60,6 +61,13 @@ function makeCtx({ mirror, sessions = null, poll = {}, archive = null, failUploa
         ? { name } : undefined),
       execute: async (input) => {
         calls.push(input)
+        // Regression: the borrowed live session must reach the tool pipeline as
+        // exec.agent = { session } (dsh-remote reads agent.session.header.cwd).
+        // A nested { agent: { session } } silently breaks every rw_* call.
+        if (input.name !== 'rw_machines') {
+          assert.equal(typeof input.agent?.session?.header?.cwd, 'string',
+            `${input.name}: agent context must expose session.header.cwd`)
+        }
         const a = input.arguments || {}
         if (input.name === 'rw_machines') return text(MACHINES_TEXT)
         if (input.name === 'rw_upload') {
@@ -187,6 +195,40 @@ test('bsub_submit uploads the worker scripts and run files, then records the job
     assert.ok(bsub, 'bsub command sent')
     assert.match(bsub.arguments.command, /"--work-dir" "\/home\/op\/sim\/batch1"/)
     assert.match(bsub.arguments.command, /spectre_sweep_worker\.py/)
+  } finally {
+    restoreEnv()
+  }
+})
+
+test('bsub_submit scheduler=none runs the worker directly on the host (no bsub)', async () => {
+  const env = setupMirror()
+  const run = makeRunDir()
+  try {
+    const ctx = makeCtx({ mirror: env.mirror })
+    const res = await tool(ctx, 'bsub_submit').execute({
+      run_dir: run,
+      remote_dir: 'fore',
+      machine_id: 'node1',
+      worker: 'spectre/spectre_sweep_worker.py',
+      scheduler: 'none',
+    }, {})
+    assert.equal(res.ok, true, JSON.stringify(res))
+    assert.equal(res.scheduler, 'none')
+    assert.equal(res.state, 'completed')
+
+    const job = JSON.parse(fs.readFileSync(path.join(run, '.bsub_job.json'), 'utf8'))
+    assert.equal(job.scheduler, 'none')
+    assert.equal(job.queue, null)
+    assert.match(job.job_id, /^direct-/)
+    assert.equal(job.remote_dir, '/home/op/sim/fore')
+
+    const commands = ctx.calls.filter((c) => c.name === 'rw_exec')
+      .map((c) => String(c.arguments.command))
+    const direct = commands.find((c) => c.includes('spectre_sweep_worker.py'))
+    assert.ok(direct, 'direct worker command sent')
+    assert.ok(!direct.includes('bsub'))
+    assert.match(direct, /"--work-dir" "\/home\/op\/sim\/fore"/)
+    assert.ok(!commands.some((c) => c.includes('bsub -q')), 'no bsub invocation')
   } finally {
     restoreEnv()
   }

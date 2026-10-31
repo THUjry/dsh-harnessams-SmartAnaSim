@@ -1,4 +1,7 @@
-// Generic LSF (bsub) batch channel for remote runs.
+// Generic remote batch channel: submit a worker through LSF (bsub), or run the
+// same worker directly on the remote login host (scheduler=none, node-local
+// foreground). Both paths upload one run directory plus the plugin's worker
+// scripts and record the same job file for poll/fetch.
 //
 // This layer knows nothing about a simulator: it uploads a run directory plus the
 // plugin's worker scripts, submits a worker script through bsub, polls the LSF
@@ -146,6 +149,15 @@ export function buildSubmitCommand({ remoteDir, queue, jobName, python, workerPa
     '-o', 'bsub.out', '-e', 'bsub.err',
     shq(python), shq(workerPath), ...args.map(shq)]
   return parts.join(' ')
+}
+
+// scheduler=none: run the SAME worker directly on the remote host (the
+// node-local foreground mode — no LSF involvement). The command is executed
+// synchronously through rw_exec, so a short batch returns its own progress.
+export function buildDirectCommand({ remoteDir, python, workerPath, workerArgs }) {
+  const args = (workerArgs || []).map(String)
+  if (!args.includes('--work-dir')) args.push('--work-dir', remoteDir)
+  return ['cd', shq(remoteDir), '&&', shq(python), shq(workerPath), ...args.map(shq)].join(' ')
 }
 
 export function parseJobId(text) {

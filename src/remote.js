@@ -126,7 +126,10 @@ export function sessionInMirror(ctx, mirrorDir) {
   const root = norm(mirrorDir)
   for (const s of live) {
     const cwd = norm(s?.header?.cwd)
-    if (cwd && (cwd === root || cwd.startsWith(root + '/'))) return { agent: { session: s } }
+    // The session id rides along as `id`: the tool pipeline and dsh-remote's
+    // rw_exec owner both read exec.agent.id, so a nested { agent: { session } }
+    // is rejected before the command ever runs.
+    if (cwd && (cwd === root || cwd.startsWith(root + '/'))) return { id: s.id, session: s }
   }
   return null
 }
@@ -193,7 +196,13 @@ export async function callTool(ctx, name, args, { agent, timeoutMs = 40_000 } = 
 }
 
 export async function execRemote(ctx, agent, command, { timeoutMs = 40_000 } = {}) {
-  const r = await callTool(ctx, 'rw_exec', { command }, { agent, timeoutMs })
+  // promoteOnTimeout=false keeps every command on the borrowed session's plain
+  // foreground exec path. The promotion path needs a job controller FOR THAT
+  // AGENT, which a borrowed session (a subagent, or an idle remote project
+  // session) may not have — and these batch commands are bounded anyway.
+  const r = await callTool(ctx, 'rw_exec',
+    { command, timeoutMs, promoteOnTimeout: false },
+    { agent, timeoutMs: timeoutMs + 30_000 })
   if (r.isError) return { ok: false, isError: true, text: r.text, stdout: '', stderr: r.text,
     exitCode: -1, timedOut: false, promotedJob: '' }
   const parsed = parseRwExecText(r.text)
@@ -238,7 +247,7 @@ export async function resolveTarget(ctx, execCtx, machineId) {
       if (caller) {
         const enclosing = findEnclosingMirror(caller.header.cwd)
         if (enclosing && path.resolve(enclosing.mirrorDir) === path.resolve(mirror.mirrorDir)) {
-          agent = { agent: { session: caller } }
+          agent = { id: caller.id, session: caller }
         }
       }
     }
@@ -261,6 +270,6 @@ export async function resolveTarget(ctx, execCtx, machineId) {
       port: mirror.port, username: mirror.username },
     mirror,
     remoteRoot: mirror.remotePath,
-    agent: { agent: { session: caller } },
+    agent: { id: caller.id, session: caller },
   }
 }

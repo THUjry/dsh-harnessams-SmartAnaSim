@@ -136,26 +136,30 @@ Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
 `@@PARAM@@` vs sweep parameters, the `template.scs` naming warning, relative
 include existence, and the u/n-suffix geometry rule.
 
-## Generic bsub channel (remote LSF)
+## Generic remote batch channel (bsub or direct)
 
 Prerequisites: dsh-remote installed in the profile; the target machine has a
 local mirror and a **live session in its remote project** (a DSH workspace
-inside `$DSH_HOME/remote-workspaces/<host>-<user>-<port>/<ws>`); LSF `bsub`
-available; the batch directory inside the mirror's `remotePath` (the remote
-write fence). The plugin consumes only `rw_machines`, `rw_exec`, `rw_upload` and
-`rw_download`; it never opens its own SSH channel.
+inside `$DSH_HOME/remote-workspaces/<host>-<user>-<port>/<ws>`); the batch
+directory inside the mirror's `remotePath` (the remote write fence). The plugin
+consumes only `rw_machines`, `rw_exec`, `rw_upload` and `rw_download`; it never
+opens its own SSH channel.
 
 1. `bsub_submit` uploads `scripts/` (relative layout, into
    `<remotePath>/.harnessams/scripts` by default) and the run directory's
-   top-level files, then submits:
+   top-level files, then either submits through LSF or runs directly:
    ```
    cd <remote_dir> && bsub -q <queue> -J <job> -o bsub.out -e bsub.err \
      <remote_python> <scripts>/<worker> ...worker_args --work-dir <remote_dir>
    ```
-   The template is always uploaded as **`template.scs`** (AsymATT convention), so
-   `sweep_config.json` must use `"netlist_template": "template.scs"`. The tool
-   writes `<run_dir>/.bsub_job.json` and verifies `bjobs` / `errlog.txt` /
-   `.worker_started` after submission.
+   `scheduler="none"` skips `bsub` entirely and runs the same worker on the
+   login host in the foreground (the node-local mode), waiting for it to finish;
+   the job record then says `scheduler: "none"` and `bsub_poll` reads the
+   progress files instead of `bjobs`. The template is always uploaded as
+   **`template.scs`** (AsymATT convention), so `sweep_config.json` must use
+   `"netlist_template": "template.scs"`. The tool writes
+   `<run_dir>/.bsub_job.json` and verifies `bjobs` / `errlog.txt` /
+   `.worker_started` after an LSF submission.
 2. `bsub_poll` reads one marker-delimited remote command: `bjobs` state,
    `point_meta.json` count, `sweep_progress.json` summary and the errlog tail.
    A finished job that left the queue is `completed` when all point metas exist
@@ -166,17 +170,25 @@ write fence). The plugin consumes only `rw_machines`, `rw_exec`, `rw_upload` and
    extracts it into the local run directory. If `tar` is unavailable it falls
    back to a bounded per-file download. The archive is kept.
 
-Example: submit the Spectre worker and fetch S-parameters.
+Example: submit the Spectre worker and fetch S-parameters. The same call with
+`scheduler="none"` runs it on the login host instead (node-local foreground):
 
 ```
 bsub_submit(run_dir="<proj>/sweep/Round1/top", machine_id="node1",
             remote_dir="HarnessAMS/Round1",
             worker="spectre/spectre_sweep_worker.py",
-            worker_args=["--config", "sweep_config.json", "--max-parallel", "8"])
+            worker_args=["--config", "sweep_config.json", "--max-parallel", "8"],
+            scheduler="lsf")                # or "none" for the foreground run
 bsub_poll(run_dir="...")                     # repeat until state == completed
 bsub_fetch(run_dir="...", includes=["point_meta.json",
             "*/netlist.scs.raw/sp.sp", "sweep_progress.json"])
 ```
+
+The borrowed live session is passed as the tool-pipeline agent (`id` + `session`)
+and every `rw_exec` disables promotion (`promoteOnTimeout: false`), so the batch
+channel never depends on that session's job controller. Without a live session in
+the machine's mirror the tools refuse with an actionable message rather than
+falling back to a different machine.
 
 Cluster gotchas (verified): use the full remote Python path (a bare `python3`
 may resolve to Calibre's Python); `bjobs` empty right after a fast batch is
@@ -226,18 +238,24 @@ RF analysis.
 
 ## Validation
 
-- `node --test` from the repo root: 38 passing tests (tool schema/registration,
+- `node --test` from the repo root: 39 passing tests (tool schema/registration,
   script parsing + naming, PSF parsing, ngspice and Spectre worker statuses with
-  fake process layers, bsub channel against a mocked dsh-remote tool shell, and
-  the existing S-parameter regression suite).
+  fake process layers, bsub channel against a mocked dsh-remote tool shell
+  including the direct `scheduler="none"` path, and the existing S-parameter
+  regression suite).
 - ngspice demo regression: a single-point rerun of demo1 (tt, 1.62 V, -40 C)
   reproduced the recorded metrics bit-for-bit (`dc_gain_db` 42.8323,
   `ugb_hz` 147379000, `phase_margin_deg` 71.6164, `noise` 2.787523e-05).
-- node1 Spectre dual-mode acceptance (2026-10-31, Broadband4 Round1 template,
-  2 states at 65 C): foreground run on node1 and LSF job 15924601 both returned
-  2/2 success; `point_meta` status/params/signals matched, and each `sp.sp` was
-  byte-identical across all 5135 lines except the PSF header `date`. Reproduce
-  with `tests/manual/compare_spectre_runs.py <run-a> <run-b>`.
+- node1 Spectre dual-mode acceptance through the plugin tools, no direct shell or
+  Python (2026-10-31, Broadband4 Round1 template, 2 states at 65 C):
+  `bsub_submit(scheduler="none")` ran on node1 (`compute_node=node1`, record
+  `direct-1793437388485`) and `bsub_submit(scheduler="lsf")` became Job
+  **15929901** on node5; both returned 2/2 success. `bsub_fetch` recovered both
+  point metas and both `sp.sp` files (5135 lines each); the only difference in
+  each pair is the PSF header `date`. `snp_read` on both files gives identical
+  band/port/max|S|/reciprocity values, and the 1564 numeric CSV rows per point
+  are identical. An earlier ssh-only acceptance used Job 15924601; it remains
+  reproducible with `tests/manual/compare_spectre_runs.py <run-a> <run-b>`.
 
 ## What the package ships
 

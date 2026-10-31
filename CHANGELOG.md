@@ -38,7 +38,9 @@ All notable changes to this project are documented here. The format follows
   through `bsub`, poll `bjobs` + point metas + `sweep_progress.json`, and fetch a
   tar archive back into the local run directory. The Spectre workflow is only a
   worker choice; plugin scripts upload with their relative layout and the
-  template is always named `template.scs`.
+  template is always named `template.scs`. `bsub_submit` also accepts
+  `scheduler="none"` for a node-local foreground run (no `bsub`; the same worker
+  runs on the login host and `bsub_poll` reads the progress files).
 - Shared `sim_collect` now records `results.json.simulator` (from the run's
   `.simulator` marker, or the template extension) and `sim_report` shows it in the
   report header; `sim_progress` returns it too.
@@ -49,6 +51,12 @@ All notable changes to this project are documented here. The format follows
   are rejected by the first-party schema rules, and dev-mount could not resolve
   `@deepseek-ai/dsh-tools`; the local compiler now always emits an object-rooted
   JSON Schema and validates required/type/enum before execution.
+- **Borrowed-session agent context**: `sessionInMirror` returned
+  `{ agent: { session } }`, which the tool pipeline handed over as
+  `exec.agent.session === undefined` (every `rw_*` call failed with
+  `Cannot read properties of undefined (reading 'id')`). It now returns
+  `{ id, session }`; `execRemote` also passes `promoteOnTimeout: false` so a
+  remote command never needs the borrowed session's job controller.
 - JSON reads (configs, point metas, reports) tolerate a UTF-8 BOM.
 - `.compute_node` records the actual host name (previously always `local`).
 
