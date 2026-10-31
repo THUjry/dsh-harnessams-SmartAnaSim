@@ -1,7 +1,7 @@
 {
   "name": "dsh-harnessams-smart-ana-sim",
   "version": "0.1.0",
-  "description": "HarnessAMS-SmartAnaSim: run simulations (local ngspice channel, code-driven netlist assembly with checks, sweep-result HTML reports)",
+  "description": "HarnessAMS-SmartAnaSim: simulation channels for ngspice and Spectre (code-driven netlist assembly with checks, local and bsub batch sweeps, generic bsub remote channel, S-parameter reading/extraction, sweep-result HTML reports)",
   "type": "module",
   "main": "src/index.js",
   "exports": {
@@ -29,11 +29,5 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/THUjry/dsh-harnessams-SmartAnaSim.git"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/dsh-tools": ">=0.0.1-rc.1"
-  },
-  "devDependencies": {
-    "@deepseek-ai/dsh-tools": "0.0.1-rc.1"
   }
 }

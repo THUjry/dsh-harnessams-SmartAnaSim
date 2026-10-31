@@ -2,9 +2,15 @@
 """Aggregate every point_meta.json in a sweep run directory into results.json
 (per-point metrics plus summary statistics).
 
+The simulator label comes from --simulator, else <work-dir>/.simulator (written
+by either sweep worker), else the netlist template extension (.spi -> ngspice,
+.scs -> spectre). It is stored as results.json.simulator for the report label.
+
 Usage:
-  python <plugin scripts>/collect_results.py --work-dir sweep/Round1/top [--out results.json]
-Default output: <work-dir>/results.json. Exit code: 0 when success/partial points exist, else 1.
+  python <plugin scripts>/common/common_collect_results.py --work-dir sweep/Round1/top
+         [--out results.json] [--simulator ngspice|spectre]
+Default output: <work-dir>/results.json. Exit code: 0 when success/partial points
+exist, else 1.
 """
 import argparse
 import json
@@ -23,7 +29,7 @@ def load_points(work_dir):
         if not os.path.isfile(meta_path):
             continue
         try:
-            with open(meta_path, encoding="utf-8") as f:
+            with open(meta_path, encoding="utf-8-sig") as f:
                 m = json.load(f)
         except (OSError, ValueError):
             continue
@@ -54,18 +60,39 @@ def summarize(points):
     return summary
 
 
+def detect_simulator(work_dir, override=None):
+    if override:
+        return override
+    marker = os.path.join(work_dir, ".simulator")
+    if os.path.isfile(marker):
+        try:
+            with open(marker, encoding="utf-8") as f:
+                name = f.read().strip()
+            if name:
+                return name
+        except OSError:
+            pass
+    for template, simulator in (("template.scs", "spectre"), ("template.spi", "ngspice")):
+        if os.path.isfile(os.path.join(work_dir, template)):
+            return simulator
+    return None
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Collect sweep results into results.json")
     ap.add_argument("--work-dir", required=True)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--simulator", default=None,
+                    help="simulator label (default: <work-dir>/.simulator or the template extension)")
     args = ap.parse_args(argv)
     work_dir = os.path.abspath(args.work_dir)
     points = load_points(work_dir)
     if not points:
-        print(f"no point_meta.json found: {work_dir}", file=sys.stderr)
+        print("no point_meta.json found: %s" % work_dir, file=sys.stderr)
         return 1
     result = {
         "work_dir": work_dir,
+        "simulator": detect_simulator(work_dir, args.simulator),
         "n_points": len(points),
         "n_success": sum(1 for p in points if p["status"] == "success"),
         "n_partial": sum(1 for p in points if p["status"] == "partial"),
@@ -85,8 +112,9 @@ def main(argv=None):
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
         f.write("\n")
-    print(f"[collect] {result['n_success']} success / {result['n_partial']} partial / "
-          f"{result['n_failed']} failed -> {out}")
+    print("[collect] %s: %d success / %d partial / %d failed -> %s"
+          % (result.get("simulator") or "unknown", result["n_success"],
+             result["n_partial"], result["n_failed"], out))
     for k, v in result["summary"].items():
         print(f"  {k}: min={v['min']:.6g} max={v['max']:.6g} mean={v['mean']:.6g} (n={v['n']})")
     return 0 if result["n_success"] + result["n_partial"] > 0 else 1

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""HarnessAMS sweep-result HTML report generator (generic ngspice sweep version).
+"""HarnessAMS sweep-result HTML report generator (generic, shared by both simulators).
 
 Mechanisms and hard rules:
 - Four sections: (1) summary metric cards, (2) interactive metric charts (Plotly),
@@ -29,7 +29,9 @@ the fallback when no local source exists; --plotly-cdn forces it.
 
 Input: --project <demo project dir> (containing sweep/Round*/top/results.json + cell_meta.json)
 Output: <project>/Analysis/<project>_report.html + <project>/Analysis/data/Round<N>.js
-Usage: python gen_sweep_report.py --project <workspace>/<demo> [--round Round1] [--plotly <path>] [--plotly-cdn]
+The Simulator label is results.json.simulator (written by sim_collect), else n/a.
+Usage: python common_gen_sweep_report.py --project <workspace>/<demo> [--round Round1]
+       [--plotly <path>] [--plotly-cdn]
 """
 import argparse
 import json
@@ -38,6 +40,10 @@ import re
 import shutil
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.common_workspace import find_workspace_config as load_workspace_config  # noqa: E402
 
 PLOTLY_CDN = "https://cdn.plot.ly/plotly-3.0.1.min.js"
 
@@ -76,7 +82,7 @@ HEAD = """<!DOCTYPE html>
 </head>
 <body>
 <h1>__CASCADE__ - sweep report</h1>
-<div class="meta">Generated __NOW__ | PDK: __PDK__ | Simulator: ngspice (local)</div>
+<div class="meta">Generated __NOW__ | PDK: __PDK__ | Simulator: __SIMULATOR__</div>
 <div class="selector-bar">Round: <select id="round-select"></select><span id="round-info" class="meta"></span></div>
 """
 
@@ -305,28 +311,8 @@ if (MANIFEST.rounds.length) { loadRound(MANIFEST.rounds[0].file); }
 
 
 def load_json(path):
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8-sig") as f:
         return json.load(f)
-
-
-def load_workspace_config(start_dir):
-    """Walk upward for harnessams.json (bare form or inside harnessams-workspace/).
-    Returns (config dict, config directory) or (None, None)."""
-    d = os.path.abspath(start_dir)
-    for _ in range(6):
-        for cand_dir in (d, os.path.join(d, "harnessams-workspace")):
-            cand = os.path.join(cand_dir, "harnessams.json")
-            if os.path.isfile(cand):
-                try:
-                    with open(cand, encoding="utf-8") as f:
-                        return json.load(f), cand_dir
-                except (OSError, ValueError):
-                    pass
-        parent = os.path.dirname(d)
-        if parent == d:
-            break
-        d = parent
-    return None, None
 
 
 def resolve_plotly_src(force_cdn, out_dir, project, plotly_arg=None):
@@ -435,6 +421,7 @@ def build_round_data(name, top, results_path):
         "round": name,
         "testbench": meta.get("testbench") or meta.get("cell_name", ""),
         "pdk": (meta.get("pdk") or {}).get("name", ""),
+        "simulator": res.get("simulator") or "",
         "group_by": group_by or "",
         "group_values": group_values,
         "param_names": param_names,
@@ -450,7 +437,7 @@ def build_round_data(name, top, results_path):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="ngspice sweep HTML report generator")
+    ap = argparse.ArgumentParser(description="sweep-result HTML report generator")
     ap.add_argument("--project", required=True)
     ap.add_argument("--round", default=None)
     ap.add_argument("--out", default=None)
@@ -472,9 +459,11 @@ def main(argv=None):
 
     entries = []
     pdk_name = ""
+    simulator_name = ""
     for name, top, res_path in rounds:
         rd = build_round_data(name, top, res_path)
         pdk_name = pdk_name or rd["pdk"]
+        simulator_name = simulator_name or rd.get("simulator") or ""
         js_name = f"Round{name.replace('Round', '')}.js"
         # hard rule: data JS is plain utf-8 without BOM, json.dumps all-ASCII, one var line
         payload = "var ROUND_DATA = " + json.dumps(rd, separators=(",", ":"), ensure_ascii=True) + ";"
@@ -493,7 +482,8 @@ def main(argv=None):
             .replace("__CASCADE__", project_name)
             .replace("__PLOTLY__", plotly_src)
             .replace("__NOW__", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
-            .replace("__PDK__", pdk_name or "n/a"))
+            .replace("__PDK__", pdk_name or "n/a")
+            .replace("__SIMULATOR__", simulator_name or "n/a"))
     html += BODY_TOP
     html += (FOOT_JS
              .replace("__CASCADE__", project_name)

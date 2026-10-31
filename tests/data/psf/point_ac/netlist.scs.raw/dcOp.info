@@ -1,0 +1,7 @@
+TYPE
+dc
+VALUE
+"M0:gm" "S" 1.906000e-04
+"M0:vth" "V" 4.500000e-01
+"R1:res" "Ohm" 1.250000e+03
+END

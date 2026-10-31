@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """snp_common.py -- shared S-parameter file I/O and math for the snp_* tools.
 
-Library module (no main), imported by scripts/snp_read.py and
-scripts/snp_extract.py. Provides:
+Library module (no main), imported by scripts/snp/snp_read.py and
+scripts/snp/snp_extract.py. Provides:
 
 * loaders for three input formats into one unified in-memory form
   (class SNPData: frequency list + per-point NxN complex matrices + parameter
@@ -67,7 +67,7 @@ def _load_backend():
             return _inv, _mul, "numpy"
         except ImportError:
             pass
-    sys.path.insert(0, str(here.parent / "assets"))
+    sys.path.insert(0, str(here.parents[1] / "assets"))
     import numfallback
     return numfallback.inv, numfallback.matmul, "fallback"
 

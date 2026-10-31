@@ -8,10 +8,10 @@ config file's directory), defaulting to <workspace>/.trash. The workspace is fou
 upward for harnessams.json (bare form or inside harnessams-workspace/).
 
 Usage:
-  python <plugin scripts>/trash.py <path>...                       # move into the trash
-  python <plugin scripts>/trash.py --list                          # list trash contents
-  python <plugin scripts>/trash.py --restore <trash-name> <dest>   # restore an entry
-  python <plugin scripts>/trash.py --purge <trash-name>            # really destroy (explicit; no --all)
+  python <plugin scripts>/common/common_trash.py <path>...                       # move into the trash
+  python <plugin scripts>/common/common_trash.py --list                          # list trash contents
+  python <plugin scripts>/common/common_trash.py --restore <trash-name> <dest>   # restore an entry
+  python <plugin scripts>/common/common_trash.py --purge <trash-name>            # really destroy (explicit; no --all)
 """
 import argparse
 import json
@@ -19,36 +19,10 @@ import os
 import shutil
 import sys
 from datetime import datetime
+from pathlib import Path
 
-
-def find_workspace_config(start_dir):
-    """Walk upward for harnessams.json (bare form or inside harnessams-workspace/).
-    Returns (config dict, config directory) or (None, None)."""
-    d = os.path.abspath(start_dir)
-    for _ in range(8):
-        for cand_dir in (d, os.path.join(d, "harnessams-workspace")):
-            cand = os.path.join(cand_dir, "harnessams.json")
-            if os.path.isfile(cand):
-                try:
-                    with open(cand, encoding="utf-8") as f:
-                        return json.load(f), cand_dir
-                except (OSError, ValueError):
-                    pass
-        parent = os.path.dirname(d)
-        if parent == d:
-            break
-        d = parent
-    return None, None
-
-
-def resolve_path(value, base_dir):
-    """Config path resolution: absolute values pass through; relative values resolve
-    against the config file's directory."""
-    if not value:
-        return value
-    if os.path.isabs(value):
-        return value
-    return os.path.normpath(os.path.join(base_dir, value))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.common_workspace import find_workspace_config, resolve_path  # noqa: E402
 
 
 def main(argv=None):

@@ -5,7 +5,54 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
+### Changed — 2026-10-31 (breaking)
+
+- **Three-channel refactor**: the plugin is now organised by simulator family
+  (`ngspice_*`, `spectre_*`) plus a generic LSF family (`bsub_*`), the S-parameter
+  tools (`snp_*`), and the simulator-agnostic shared tools (`sim_collect`,
+  `sim_progress`, `sim_report`, `sim_trash`). Tool count 8 → 14.
+- **Breaking renames, no aliases** (0.1.0 was never published):
+  `sim_assemble` → `ngspice_assemble`, `sim_run_sweep` → `ngspice_run_sweep`.
+  `sim_collect` / `sim_progress` / `sim_report` / `sim_trash` keep their names and
+  arguments.
+- Script layout is now `scripts/{common,ngspice,spectre,snp}/` with a family prefix
+  on every filename (`common_*`, `ngspice_*`, `spectre_*`, `snp_*`); shared batch
+  mechanics moved to `common_sweep_engine.py`, unit/bias helpers to
+  `common_units.py`, and workspace discovery to `common_workspace.py`.
+- The unused `@deepseek-ai/dsh-tools` peer/dev dependency was removed: tool
+  definitions are built by the local schema compiler.
+
+### Added — 2026-10-31
+
+- **Spectre local channel**: `spectre_assemble`, `spectre_run_sweep`,
+  `spectre_parse`. The worker ports the AsymATT batch mechanics (psfascii,
+  `@@PARAM@@`, per-point `point_meta.json`, smart license/output timeout
+  extensions, progress/best points, `.simulator` marker) and ships
+  `spectre_psf_parse.py` (PSF ASCII swept/delta/complex plus non-swept `*.info`
+  scalars) and `spectre_checks.py` (`.scs` format, placeholder/parameter
+  consistency, include existence, geometry unit-suffix rule).
+- **Generic remote LSF channel**: `bsub_submit`, `bsub_poll`, `bsub_fetch` —
+  simulator-agnostic. They consume only dsh-remote's `rw_machines`/`rw_exec`/
+  `rw_upload`/`rw_download` (a real live session in the machine's mirror is
+  borrowed), upload the plugin scripts plus the run directory, submit a worker
+  through `bsub`, poll `bjobs` + point metas + `sweep_progress.json`, and fetch a
+  tar archive back into the local run directory. The Spectre workflow is only a
+  worker choice; plugin scripts upload with their relative layout and the
+  template is always named `template.scs`.
+- Shared `sim_collect` now records `results.json.simulator` (from the run's
+  `.simulator` marker, or the template extension) and `sim_report` shows it in the
+  report header; `sim_progress` returns it too.
+
+### Fixed — 2026-10-31
+
+- **Invalid tool schemas (`type: null`)**: parameters carrying `required: false`
+  are rejected by the first-party schema rules, and dev-mount could not resolve
+  `@deepseek-ai/dsh-tools`; the local compiler now always emits an object-rooted
+  JSON Schema and validates required/type/enum before execution.
+- JSON reads (configs, point metas, reports) tolerate a UTF-8 BOM.
+- `.compute_node` records the actual host name (previously always `local`).
+
+### Added — 2026-10-30
 
 - S-parameter local reading and computation (2026-10-30, tools-only by design — no UI);
   tool surface grows from six to eight:

@@ -12,8 +12,8 @@ import { fileURLToPath } from 'node:url'
 
 const execFileAsync = promisify(execFile)
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
-const EXTRACT = path.join(ROOT, 'scripts', 'snp_extract.py')
-const READER = path.join(ROOT, 'scripts', 'snp_read.py')
+const EXTRACT = path.join(ROOT, 'scripts', 'snp', 'snp_extract.py')
+const READER = path.join(ROOT, 'scripts', 'snp', 'snp_read.py')
 const SYNTH = path.join(ROOT, 'tests', 'synth_helper.py')
 const DATA = path.join(ROOT, 'tests', 'data')
 
@@ -22,14 +22,14 @@ const tmp = () => mkdtempSync(path.join(tmpdir(), 'snp-'))
 async function synth(kind, name) {
   const dir = tmp()
   const file = path.join(dir, name)
-  const { stdout } = await execFileAsync('python', [SYNTH, kind, file], { timeout: 120_000 })
+  const { stdout } = await execFileAsync('python', ['-B', SYNTH, kind, file], { timeout: 120_000 })
   return { dir, file, info: JSON.parse(stdout) }
 }
 
 async function extract(file, type, args = [], env = {}) {
   const out = tmp()
   const argv = [EXTRACT, '--file', file, '--type', type, '--out-dir', out, ...args]
-  const { stdout } = await execFileAsync('python', argv,
+  const { stdout } = await execFileAsync('python', ['-B', ...argv],
     { timeout: 300_000, env: { ...process.env, ...env } })
   const stem = path.basename(file).replace(/\.[^.]+$/, '')
   const j = JSON.parse(readFileSync(path.join(out, `${stem}_extract_${type}.json`), 'utf8'))
@@ -39,7 +39,7 @@ async function extract(file, type, args = [], env = {}) {
 async function readSnp(file, param = 'S') {
   const out = tmp()
   const { stdout } = await execFileAsync(
-    'python', [READER, '--file', file, '--param', param, '--out-dir', out],
+    'python', ['-B', READER, '--file', file, '--param', param, '--out-dir', out],
     { timeout: 120_000 })
   const stem = path.basename(file).replace(/\.[^.]+$/, '')
   const j = JSON.parse(readFileSync(path.join(out, `${stem}_read.json`), 'utf8'))
