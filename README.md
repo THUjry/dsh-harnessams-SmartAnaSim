@@ -1,24 +1,25 @@
 # HarnessAMS-SmartAnaSim
 
-> Simulation plugin: ngspice and Spectre channels (code-driven netlist assembly with
-> hard PDK isolation), a generic remote LSF channel through dsh-remote, S-parameter
-> reading/extraction, and sweep-result HTML reports.
+> Simulator plugin: ngspice and Spectre channels (code-driven netlist assembly with
+> hard PDK isolation) and S-parameter reading/extraction. Simulator-specific code
+> only — the generic remote LSF channel (`bsub_*`) and the sweep-result analysis
+> tools (`sim_*`, HTML reports) live in the top-level `HarnessAMS` plugin.
 > npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install
 > paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
 
-## Tool surface (14)
+## Tool surface (7)
 
 | Family | Tool | Runs where |
 |---|---|---|
 | ngspice | `ngspice_assemble`, `ngspice_run_sweep` | local ngspice (portable build) |
 | Spectre | `spectre_assemble`, `spectre_run_sweep`, `spectre_parse` | the host executing this plugin (local Spectre) |
-| bsub (generic LSF) | `bsub_submit`, `bsub_poll`, `bsub_fetch` | remote cluster through dsh-remote; no simulator knowledge |
 | S-parameter | `snp_read`, `snp_extract` | local (tools only, no UI) |
-| shared | `sim_collect`, `sim_progress`, `sim_report`, `sim_trash` | local, simulator-agnostic |
 
-The generic bsub channel is how a Spectre run reaches a cluster: pick the
-`spectre/spectre_sweep_worker.py` worker and pass its arguments. Nothing in
-`bsub_*` mentions Spectre, and the Spectre tools never touch the network.
+A cluster run reaches these workers through the **top-level plugin's** generic
+`bsub_*` tools: pick the `spectre/spectre_sweep_worker.py` worker (resolved under
+the workspace `sim_scripts_dir`, which points at this package's `scripts/` tree)
+and pass its arguments. Nothing here mentions Spectre from the batch side, and
+the Spectre tools never touch the network.
 
 ## Why the split
 
@@ -29,28 +30,22 @@ The generic bsub channel is how a Spectre run reaches a cluster: pick the
 - `run_sweep` is simulator-specific: a local ngspice subprocess with stdout
   measurements vs. a local Spectre process with psfascii output and smart
   timeouts (license wait / output-progress extensions).
-- `collect` / `progress` / `report` / `trash` are data-contract operations and
-  stay shared as `sim_*`.
-- The remote channel is infrastructure, not a simulator detail, so it is a
-  separate generic `bsub_*` family.
+- The generic batch channel and the data-contract analysis operations
+  (collect / progress / report / trash) are **not** simulator details — they
+  moved to the top-level `dsh-harnessams` plugin (2026-11-01 redistribution).
 
 ## Repository layout
 
 ```
 src/
-  index.js                 entry: registers the 14 tools (plain JS, no build chain)
+  index.js                 entry: registers the 7 tools (plain JS, no build chain)
   tool.js                  parameter DSL -> valid JSON Schema compiler + validation
   py.js                    python spawn channel, script paths, error text
   projects.js              project gen_*.py discovery/execution (assembly bridge)
-  remote.js                dsh-remote shell: rw_machines/rw_exec/rw_upload/rw_download,
-                           mirror + live-session borrowing, result-text parsing
-  bsub.js                  generic LSF engine: submit command, job record, poll parse,
-                           fetch archive/extract, script manifest
   tools/
-    ngspice.js  spectre.js  bsub.js  shared.js  snp.js
+    ngspice.js  spectre.js  snp.js
 scripts/
   common/    common_workspace.py common_units.py common_sweep_engine.py
-             common_collect_results.py common_gen_sweep_report.py common_trash.py
   ngspice/   ngspice_sweep_worker.py ngspice_checks.py
   spectre/   spectre_sweep_worker.py spectre_checks.py spectre_psf_parse.py
   snp/       snp_common.py snp_read.py snp_extract.py
@@ -70,10 +65,9 @@ directory. Recognized fields:
 
 | Field | Used by |
 |---|---|
-| `ngspice_cmd`, `pdk_lib`, `trash_dir` | ngspice worker / assembly / trash |
+| `ngspice_cmd`, `pdk_lib` | ngspice worker / assembly |
 | `spectre_cmd` | local Spectre worker (falls back to PATH) |
-| `remote_python`, `remote_scripts_dir` | generic bsub defaults (both optional; remote absolute values stay opaque) |
-| `plotly_asset` | report Plotly seeding fallback |
+| `trash_dir`, `plotly_asset`, `remote_python`, `remote_scripts_dir`, `sim_scripts_dir` | consumed by the top-level `dsh-harnessams` plugin's analysis/batch/report tools (this package only supplies the `scripts/` tree that `sim_scripts_dir` points at) |
 
 ## ngspice channel
 
@@ -135,64 +129,29 @@ Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
 `@@PARAM@@` vs sweep parameters, the `template.scs` naming warning, relative
 include existence, and the u/n-suffix geometry rule.
 
-## Generic remote batch channel (bsub or direct)
+## Cluster runs (through the top-level plugin)
 
-Prerequisites: dsh-remote installed in the profile; the target machine has a
-local mirror and a **live session in its remote project** (a DSH workspace
-inside `$DSH_HOME/remote-workspaces/<host>-<user>-<port>/<ws>`); the batch
-directory inside the mirror's `remotePath` (the remote write fence). The plugin
-consumes only `rw_machines`, `rw_exec`, `rw_upload` and `rw_download`; it never
-opens its own SSH channel.
-
-1. `bsub_submit` uploads `scripts/` (relative layout, into
-   `<remotePath>/.harnessams/scripts` by default) and the run directory's
-   top-level files, then either submits through LSF or runs directly:
-   ```
-   cd <remote_dir> && bsub -q <queue> -J <job> -o bsub.out -e bsub.err \
-     <remote_python> <scripts>/<worker> ...worker_args --work-dir <remote_dir>
-   ```
-   `scheduler="none"` skips `bsub` entirely and runs the same worker on the
-   login host in the foreground (the node-local mode), waiting for it to finish;
-   the job record then says `scheduler: "none"` and `bsub_poll` reads the
-   progress files instead of `bjobs`. The template is always uploaded as
-   **`template.scs`** (AsymATT convention), so `sweep_config.json` must use
-   `"netlist_template": "template.scs"`. The tool writes
-   `<run_dir>/.bsub_job.json` and verifies `bjobs` / `errlog.txt` /
-   `.worker_started` after an LSF submission.
-2. `bsub_poll` reads one marker-delimited remote command: `bjobs` state,
-   `point_meta.json` count, `sweep_progress.json` summary and the errlog tail.
-   A finished job that left the queue is `completed` when all point metas exist
-   (LSF's `No job found` is healthy/complete, not an error).
-3. `bsub_fetch` tars the requested includes on the remote (`point_meta.json`,
-   `sweep_progress.json`, `errlog.txt`, `bsub.out/err` by default; add
-   `*/netlist.scs.raw/sp.sp` for Spectre), downloads `fetch_<job>.tgz` and
-   extracts it into the local run directory. If `tar` is unavailable it falls
-   back to a bounded per-file download. The archive is kept.
-
-Example: submit the Spectre worker and fetch S-parameters. The same call with
-`scheduler="none"` runs it on the login host instead (node-local foreground):
+The generic remote batch channel (`bsub_submit` / `bsub_poll` / `bsub_fetch`)
+and the sweep-result analysis tools (`sim_collect` / `sim_progress` /
+`sim_report` / `sim_trash`) moved to the top-level `dsh-harnessams` plugin on
+2026-11-01. Typical remote Spectre round (see the HarnessAMS repo for the full
+channel contract — mirrors, live-session borrowing, the remote write fence and
+cluster gotchas):
 
 ```
 bsub_submit(run_dir="<proj>/sweep/Round1/top", machine_id="node1",
             remote_dir="HarnessAMS/Round1",
-            worker="spectre/spectre_sweep_worker.py",
+            worker="spectre/spectre_sweep_worker.py",     # resolved under sim_scripts_dir
             worker_args=["--config", "sweep_config.json", "--max-parallel", "8"],
-            scheduler="lsf")                # or "none" for the foreground run
+            scheduler="lsf")                # or "none" for a login-host foreground run
 bsub_poll(run_dir="...")                     # repeat until state == completed
 bsub_fetch(run_dir="...", includes=["point_meta.json",
             "*/netlist.scs.raw/sp.sp", "sweep_progress.json"])
 ```
 
-The borrowed live session is passed as the tool-pipeline agent (`id` + `session`)
-and every `rw_exec` disables promotion (`promoteOnTimeout: false`), so the batch
-channel never depends on that session's job controller. Without a live session in
-the machine's mirror the tools refuse with an actionable message rather than
-falling back to a different machine.
-
-Cluster gotchas (verified): use the full remote Python path (a bare `python3`
-may resolve to Calibre's Python); `bjobs` empty right after a fast batch is
-normal; `+mt` is harmless when LSF allocates one core; keep the remote directory
-inside the mirror's `remotePath` or the write fence rejects the upload.
+The uploaded worker tree is this package's `scripts/` directory (the workspace
+`sim_scripts_dir`), so remote workers resolve `from common.common_sweep_engine
+import …` exactly like local ones.
 
 ## S-parameter reading and extraction (snp_read / snp_extract)
 
@@ -235,13 +194,19 @@ label comes from `results.json.simulator` (written by `sim_collect`). S-paramete
 curve dashboards are not part of this round: use `spectre_parse` + `snp_*` for
 RF analysis.
 
+## Reports
+
+Sweep-result HTML reports are generated by the top-level plugin's `sim_report`
+tool (from `sweep/Round*/top/results.json`); the report generator script moved
+with it. S-parameter curve dashboards are not part of this round: use
+`spectre_parse` + `snp_*` for RF analysis.
+
 ## Validation
 
-- `node --test` from the repo root: 39 passing tests (tool schema/registration,
-  script parsing + naming, PSF parsing, ngspice and Spectre worker statuses with
-  fake process layers, bsub channel against a mocked dsh-remote tool shell
-  including the direct `scheduler="none"` path, and the existing S-parameter
-  regression suite).
+- `node --test` from the repo root (tool schema/registration, script parsing +
+  naming, PSF parsing, ngspice and Spectre worker statuses with fake process
+  layers, and the S-parameter regression suite; the bsub-channel and
+  report-injection tests moved to the HarnessAMS repo with the tools).
 - ngspice demo regression: a single-point rerun of demo1 (tt, 1.62 V, -40 C)
   reproduced the recorded metrics bit-for-bit (`dc_gain_db` 42.8323,
   `ugb_hz` 147379000, `phase_margin_deg` 71.6164, `noise` 2.787523e-05).
@@ -258,7 +223,7 @@ RF analysis.
 
 ## What the package ships
 
-`src/`, `scripts/{common,ngspice,spectre,snp}` (14 `.py`), `assets/numfallback.py`,
+`src/`, `scripts/{common,ngspice,spectre,snp}` (11 `.py`), `assets/numfallback.py`,
 `cordis.patch.yml`, plus npm auto-included `package.json`, `README.md`, `LICENSE`.
 Deliberately not shipped: `tests/` (including `tests/data/` and the manual
 comparison helper) and any Plotly copy. `PUBLISH.md` holds the tarball checks.

@@ -1,7 +1,7 @@
 {
   "name": "dsh-harnessams-smart-ana-sim",
   "version": "0.1.0",
-  "description": "HarnessAMS-SmartAnaSim: simulation channels for ngspice and Spectre (code-driven netlist assembly with checks, local and bsub batch sweeps, generic bsub remote channel, S-parameter reading/extraction, sweep-result HTML reports)",
+  "description": "HarnessAMS-SmartAnaSim: simulator channels only — ngspice and Spectre code-driven netlist assembly with checks, local batch sweeps, PSF parsing, and S-parameter reading/extraction (the generic remote batch channel and sweep-result analysis tools live in the top-level dsh-harnessams plugin)",
   "type": "module",
   "main": "src/index.js",
   "exports": {

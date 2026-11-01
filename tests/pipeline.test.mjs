@@ -27,7 +27,9 @@ function pyFiles(dir) {
 test('pipeline scripts parse with the system python', async () => {
   const files = pyFiles(path.join(ROOT, 'scripts'))
     .concat([path.join(ROOT, 'assets', 'numfallback.py')])
-  assert.ok(files.length >= 14, `expected at least 14 scripts, got ${files.length}`)
+  // 11 shipped scripts (common x3, ngspice x2, spectre x3, snp x3) + numfallback;
+  // the analysis scripts (collect/report/trash) moved to the HarnessAMS plugin.
+  assert.ok(files.length >= 12, `expected at least 12 scripts, got ${files.length}`)
   const code = 'import ast,sys\n'
     + 'for p in sys.argv[1:]:\n'
     + '    ast.parse(open(p, encoding="utf-8").read(), p)\n'

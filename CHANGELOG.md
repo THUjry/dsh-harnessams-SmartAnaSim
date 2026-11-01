@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — 2026-11-01 (redistribution)
+
+- **Tool redistribution with the top-level plugin**: `bsub_submit` / `bsub_poll` /
+  `bsub_fetch` (generic remote LSF channel + the dsh-remote shell and LSF engine
+  behind them) and the simulator-agnostic `sim_collect` / `sim_progress` /
+  `sim_report` / `sim_trash` moved to `dsh-harnessams`. This package is now
+  simulator-only (7 tools: ngspice ×2, spectre ×3, snp ×2); its `scripts/` tree
+  (11 `.py` — the analysis scripts `common_collect_results` / `common_gen_sweep_report`
+  / `common_trash` and a `common_workspace.py` copy moved as well) remains the
+  worker source the top-level `bsub_submit` uploads via the workspace
+  `sim_scripts_dir`. Behavior is unchanged; only the owning package moved.
+
 ### Removed — 2026-11-01
 
 - **bestPoints feature deleted** (user decision): the `BestPoints` engine class,

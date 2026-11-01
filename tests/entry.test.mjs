@@ -5,9 +5,7 @@ import { name, inject, apply, toolDefinitions } from '../src/index.js'
 import { compileParameters, makeTool } from '../src/tool.js'
 
 const EXPECTED = [
-  'bsub_fetch', 'bsub_poll', 'bsub_submit',
   'ngspice_assemble', 'ngspice_run_sweep',
-  'sim_collect', 'sim_progress', 'sim_report', 'sim_trash',
   'snp_extract', 'snp_read',
   'spectre_assemble', 'spectre_parse', 'spectre_run_sweep',
 ]
@@ -18,7 +16,7 @@ test('plugin metadata', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('apply registers the 14 tools', () => {
+test('apply registers the 7 simulator tools', () => {
   const registered = []
   const ctx = {
     effect: (fn) => { fn() },
@@ -30,7 +28,7 @@ test('apply registers the 14 tools', () => {
 
 test('every tool compiles to an object-rooted JSON Schema with typed properties', () => {
   const defs = toolDefinitions()
-  assert.equal(defs.length, 14)
+  assert.equal(defs.length, 7)
   for (const def of defs) {
     const tool = makeTool(def)
     assert.equal(tool.parameters.type, 'object', `${def.name} parameters root`)
@@ -65,16 +63,14 @@ test('argument validation runs before execution', async () => {
   const assembly = makeTool(defs.find((d) => d.name === 'ngspice_assemble'))
   await assert.rejects(() => assembly.execute({}), /missing required property "project_dir"/)
 
-  const progress = makeTool(defs.find((d) => d.name === 'sim_progress'))
-  await assert.rejects(() => progress.execute({ run_dir: 5 }), /"run_dir" must be a string/)
+  const sweep = makeTool(defs.find((d) => d.name === 'ngspice_run_sweep'))
+  await assert.rejects(() => sweep.execute({ run_dir: 5 }), /"run_dir" must be a string/)
 
-  const submit = makeTool(defs.find((d) => d.name === 'bsub_submit'))
-  await assert.rejects(() => submit.execute({
-    run_dir: 'r', remote_dir: 'd', worker: 'w', worker_args: [1],
-  }), /"worker_args" must be an array of strings/)
+  const parse = makeTool(defs.find((d) => d.name === 'spectre_parse'))
+  await assert.rejects(() => parse.execute({ raw_dir: 5 }), /"raw_dir" must be a string/)
 
-  const trash = makeTool(defs.find((d) => d.name === 'sim_trash'))
-  await assert.rejects(() => trash.execute({ action: 'nope', path: 'x' }), /must be one of/)
+  const read = makeTool(defs.find((d) => d.name === 'snp_read'))
+  await assert.rejects(() => read.execute({ file: 7 }), /"file" must be a string/)
 })
 
 test('parameter enum declarations survive compilation', () => {

@@ -1,5 +1,6 @@
 // ngspice family: assembly bridge + local batch sweep. The simulator name is part
-// of every tool name; shared post-processing lives under sim_* (shared.js).
+// of every tool name; sweep-result analysis (sim_* tools) lives in the top-level
+// dsh-harnessams plugin.
 import { runAssembly } from '../projects.js'
 import { cliError, resolveDir, runPython } from '../py.js'
 
