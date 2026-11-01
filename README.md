@@ -85,6 +85,24 @@ The sweep config contract is documented in
 The batch engine (combinations, template substitution, progress)
 is shared with Spectre.
 
+## Tool family toggles
+
+Each simulator family registers only when its DSH plugin-config switch is not
+explicitly `false` (all default `true` — the full 7-tool surface). Change the
+switches in the DSH settings page for this plugin and cordis hot-swaps it: the
+fiber restarts and the new selection registers immediately, no reboot.
+
+```json
+{
+  "ngspice": true,
+  "spectre": true,
+  "snp": true
+}
+```
+
+The schema is `@deepseek-ai/schemastery` (peer+dev dependency; the official
+`tool-fs` plugin uses the same per-tool boolean-config pattern).
+
 ## Spectre channel
 
 `spectre_run_sweep` is a *local* channel: it runs on the host executing the

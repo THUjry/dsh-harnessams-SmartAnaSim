@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — 2026-11-01 (family toggles)
+
+- **DSH-native on-demand registration**: `src/index.js` exports a schemastery
+  `Config` with `ngspice`/`spectre`/`snp` boolean switches (default `true`).
+  `apply(ctx, config)` registers only the enabled families; changing the config
+  in the DSH settings page hot-swaps the plugin (fiber restart re-registers).
+  Only an explicit `false` trims a family. Re-introduces a dependency:
+  `@deepseek-ai/schemastery` as peer+dev (same pattern as the official
+  `tool-fs` plugin's read/write/edit booleans).
+
 ### Changed — 2026-11-01 (redistribution)
 
 - **Tool redistribution with the top-level plugin**: `bsub_submit` / `bsub_poll` /

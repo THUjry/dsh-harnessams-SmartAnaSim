@@ -1,7 +1,7 @@
-// Plugin metadata, tool surface, and parameter-schema tests.
+// Plugin metadata, tool surface, parameter-schema, and family-toggle tests.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { name, inject, apply, toolDefinitions } from '../src/index.js'
+import { name, inject, apply, toolDefinitions, Config } from '../src/index.js'
 import { compileParameters, makeTool } from '../src/tool.js'
 
 const EXPECTED = [
@@ -24,6 +24,32 @@ test('apply registers the 7 simulator tools', () => {
   }
   apply(ctx)
   assert.deepEqual(registered.sort(), EXPECTED)
+})
+
+test('Config is a real schemastery schema (cordis resolveConfig requires ~standard)', () => {
+  assert.equal(typeof Config?.['~standard']?.validate, 'function')
+  const resolved = Config['~standard'].validate({})
+  assert.equal(resolved.issues, undefined)
+  assert.deepEqual(resolved.value, { ngspice: true, spectre: true, snp: true })
+})
+
+test('family toggles select the registered tool families (only explicit false trims)', () => {
+  const names = (config) => toolDefinitions({}, config).map((d) => d.name).sort()
+  assert.deepEqual(names({}), EXPECTED)
+  assert.deepEqual(names(undefined), EXPECTED)
+  assert.deepEqual(names({ ngspice: false }), [
+    'snp_extract', 'snp_read', 'spectre_assemble', 'spectre_parse', 'spectre_run_sweep',
+  ])
+  assert.deepEqual(names({ spectre: false, snp: false }), ['ngspice_assemble', 'ngspice_run_sweep'])
+  assert.deepEqual(names({ ngspice: false, spectre: false, snp: false }), [])
+
+  const registered = []
+  const ctx = {
+    effect: (fn) => { fn() },
+    tools: { register: (t) => registered.push(t.name) },
+  }
+  apply(ctx, { ngspice: false, snp: false })
+  assert.deepEqual(registered.sort(), ['spectre_assemble', 'spectre_parse', 'spectre_run_sweep'])
 })
 
 test('every tool compiles to an object-rooted JSON Schema with typed properties', () => {

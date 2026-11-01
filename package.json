@@ -25,6 +25,12 @@
   "engines": {
     "dsh": "0.2.1-rc.2"
   },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

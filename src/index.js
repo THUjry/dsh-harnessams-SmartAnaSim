@@ -14,6 +14,7 @@
 // workers to a cluster and the sweep-result analysis/report pipeline are owned
 // by the dsh-harnessams plugin (bsub_submit takes its worker from the workspace
 // sim_scripts_dir, which points at this package's scripts/ tree).
+import z from '@deepseek-ai/schemastery'
 import { registerTools } from './tool.js'
 import { ngspiceTools } from './tools/ngspice.js'
 import { spectreTools } from './tools/spectre.js'
@@ -22,17 +23,27 @@ import { snpTools } from './tools/snp.js'
 export const name = 'dsh-harnessams-smart-ana-sim'
 export const inject = ['tools']
 
-export function toolDefinitions(ctx = {}) {
+// DSH-native per-family toggles (official tool-fs precedent): each simulator
+// family registers only when its switch is not explicitly false (defaults keep
+// the full 7-tool surface). Changing the config hot-swaps the plugin: cordis
+// restarts the fiber and apply() re-registers with the new selection.
+export const Config = z.object({
+  ngspice: z.boolean().default(true).description('Register the ngspice_* tool family (local ngspice assembly + batch sweep).'),
+  spectre: z.boolean().default(true).description('Register the spectre_* tool family (local Spectre assembly + batch sweep + psfascii parsing).'),
+  snp: z.boolean().default(true).description('Register the snp_* tool family (Touchstone reading / device extraction).'),
+})
+
+export function toolDefinitions(ctx = {}, config = {}) {
   return [
-    ...ngspiceTools(),
-    ...spectreTools(),
-    ...snpTools(),
+    ...(config.ngspice !== false ? ngspiceTools() : []),
+    ...(config.spectre !== false ? spectreTools() : []),
+    ...(config.snp !== false ? snpTools() : []),
   ]
 }
 
-export function apply(ctx) {
+export function apply(ctx, config) {
   ctx.effect(() => {
-    const names = registerTools(ctx, toolDefinitions(ctx))
+    const names = registerTools(ctx, toolDefinitions(ctx, config))
     if (ctx.logger?.info) ctx.logger.info('[smart-ana-sim] registered %d tools', names.size)
     else console.log('[smart-ana-sim] registered', names.size, 'tools')
   }, 'smart-ana-sim tools')
