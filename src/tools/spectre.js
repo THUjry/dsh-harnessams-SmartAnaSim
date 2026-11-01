@@ -30,8 +30,8 @@ export function spectreTools() {
       name: 'spectre_run_sweep',
       description: 'Run a local Spectre batch sweep on the host executing this plugin: for a run directory holding '
         + 'template.scs + sweep_config.json, generate per-point netlists (@@PARAM@@ substitution) and run Spectre. '
-        + 'Writes NN/netlist.scs, netlist.scs.raw/, spectre.out, point_meta.json, sweep_progress.json and '
-        + 'bestPoints.json. Requires Spectre on this host; cluster runs use bsub_submit/bsub_poll/bsub_fetch.',
+        + 'Writes NN/netlist.scs, netlist.scs.raw/, spectre.out, point_meta.json and sweep_progress.json. '
+        + 'Requires Spectre on this host; cluster runs use the suite\'s bsub_submit/bsub_poll/bsub_fetch.',
       parameters: {
         run_dir: { type: 'string', required: true, description: 'Run directory holding template.scs and sweep_config.json' },
         max_parallel: { type: 'number', description: 'Concurrency (default: config max_parallel)' },

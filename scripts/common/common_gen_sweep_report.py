@@ -2,8 +2,8 @@
 """HarnessAMS sweep-result HTML report generator (generic, shared by both simulators).
 
 Mechanisms and hard rules:
-- Four sections: (1) summary metric cards, (2) interactive metric charts (Plotly),
-  (3) per-point detail table, (4) best point;
+- Three sections: (1) summary metric cards, (2) interactive metric charts (Plotly),
+  (3) per-point detail table;
 - Round selector: MANIFEST + data/Round<N>.js loaded via <script> tags (no fetch under
   file://, so script injection is the only reliable channel);
 - var ROUND_DATA (never const: round switching re-declares and overwrites);
@@ -96,8 +96,6 @@ BODY_TOP = """
 <div style="max-height: 420px; overflow: auto;">
 <table id="points-table"><thead id="points-head"></thead><tbody id="points-body"></tbody></table>
 </div>
-<h2>4. Best point (bestPoints.json)</h2>
-<div class="cards" id="best-card"></div>
 <div id="info-bar"></div>
 """
 
@@ -156,7 +154,6 @@ function buildReport(RD) {
   try { buildLegend(RD); } catch (e) { console.warn("legend", e); }
   try { buildCharts(RD); } catch (e) { console.warn("charts", e); }
   try { buildTable(RD); } catch (e) { console.warn("table", e); }
-  try { buildBest(RD); } catch (e) { console.warn("best", e); }
   bind(RD);                                  // hard rule: re-bind Plotly events after every buildReport
 }
 
@@ -245,22 +242,6 @@ function buildTable(RD) {
     tr.innerHTML = html;
     body.appendChild(tr);
   });
-}
-
-function buildBest(RD) {
-  const card = document.getElementById("best-card");
-  card.innerHTML = "";
-  const b = RD.best_points;
-  const c = document.createElement("div");
-  c.className = "card";
-  if (b && b.metric) {
-    c.innerHTML = '<div class="k">best ' + show(b.metric) + " (" + show(b.mode) + ")</div>" +
-      '<div class="v">' + fmtVal(b.value) + " @ point " + show(b.point_name) + "</div>" +
-      '<div class="k">' + show(JSON.stringify(b.params)) + "</div>";
-  } else {
-    c.innerHTML = '<div class="k">no bestPoints.json (best_metric not configured, or no successful point)</div>';
-  }
-  card.appendChild(c);
 }
 
 let bindDone = false;
@@ -431,7 +412,6 @@ def build_round_data(name, top, results_path):
         "n_partial": res.get("n_partial", 0),
         "n_failed": res.get("n_failed", 0),
         "summary": res.get("summary") or {},
-        "best_points": res.get("best_points"),
         "points": points,
     }
 

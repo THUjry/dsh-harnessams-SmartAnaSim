@@ -1,6 +1,6 @@
 // Shared post-processing tools (simulator-agnostic): they read the data contract
-// written by either sweep worker (point_meta.json / sweep_progress.json /
-// bestPoints.json) and never spawn a simulator.
+// written by either sweep worker (point_meta.json / sweep_progress.json) and
+// never spawn a simulator.
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -88,7 +88,7 @@ export function sharedTools() {
     {
       name: 'sim_collect',
       description: 'Collect a finished sweep: aggregates every NN/point_meta.json of a run directory into '
-        + 'results.json (per-point metrics, min/max/mean summary, bestPoints). The simulator label comes from '
+        + 'results.json (per-point metrics, min/max/mean summary). The simulator label comes from '
         + 'the run\'s .simulator marker (or the template extension) and drives the report header.',
       parameters: {
         run_dir: { type: 'string', required: true, description: 'Run directory (sweep/RoundN/top)' },
@@ -142,7 +142,7 @@ export function sharedTools() {
     {
       name: 'sim_report',
       description: 'Generate the sweep-result HTML report (interactive Plotly metric charts, summary cards, '
-        + 'per-point table, best point) from sweep/Round*/top/results.json. Works from file:// and inside the '
+        + 'per-point table) from sweep/Round*/top/results.json. Works from file:// and inside the '
         + 'WebUI; writes <project>/Analysis/<project>_report.html. With task=<id or exact name>, the report is '
         + 'also registered into that HarnessAMS task\'s dashboard (nearest .harnessams/tasks.json above the '
         + 'project); a registration failure never fails report generation.',

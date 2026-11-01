@@ -10,7 +10,7 @@ Mechanisms (shared with the ngspice worker via scripts/common/common_sweep_engin
 - @@PARAM@@ template substitution and combination generation;
 - per-point directory NN/ holding netlist.scs, netlist.scs.raw/, spectre.out and
   point_meta.json (atomic writes);
-- sweep_progress.json (30 s cadence), bestPoints.json (updated as found),
+- sweep_progress.json (30 s cadence),
   .worker_started / .compute_node / .simulator markers and errlog.txt.
 
 Spectre specifics:
@@ -41,7 +41,6 @@ sweep_config.json contract:
     "max_parallel": 8,
     "cshrc_path": null,
     "metrics_required": [],
-    "best_metric": {"name": "...", "mode": "max"|"min"},
     "signals_from": "none" | "psf_info",
     "license_wait_extension_sec": 120,
     "raw_progress_extension_sec": 120
@@ -65,7 +64,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common.common_sweep_engine import (  # noqa: E402
-    PROGRESS_PERIOD_SEC, BestPoints, atomic_write_json, build_netlist,
+    PROGRESS_PERIOD_SEC, atomic_write_json, build_netlist,
     generate_combinations, init_worker_state, point_name, utc_now,
     write_errlog, write_progress, write_simulator,
 )
@@ -352,7 +351,6 @@ def main(argv=None):
     spectre_cmd = probe
 
     max_parallel = args.max_parallel or int(config.get("max_parallel", 4))
-    best = BestPoints(work_dir, config.get("best_metric") or {})
     write_simulator(work_dir, "spectre")
     init_worker_state(work_dir, len(combos))
 
@@ -379,7 +377,6 @@ def main(argv=None):
                             "status": "error", "elapsed_sec": 0,
                             "error_message": "worker exception: %s" % e,
                             "signals": {}}
-            best.update(metas[i])
             with print_lock:
                 m = metas[i]
                 print("[sweep] %s %s %ss" % (m["point_name"], m["status"],
@@ -399,9 +396,6 @@ def main(argv=None):
     n_partial = sum(1 for m in metas if m and m.get("status") == "partial")
     print("[sweep] done: %d success / %d partial / %d failed in %.1fs"
           % (n_ok, n_partial, total - n_ok - n_partial, time.monotonic() - t0))
-    if best.path and best.best:
-        print("[sweep] best %s (%s) = %s @ point %s"
-              % (best.name, best.mode, best.best["value"], best.best["point_name"]))
     return 0 if prog["status"] == "completed" else 1
 
 

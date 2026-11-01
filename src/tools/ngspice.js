@@ -27,7 +27,7 @@ export function ngspiceTools() {
       name: 'ngspice_run_sweep',
       description: 'Run a local ngspice batch sweep: for a run directory holding template.spi + sweep_config.json, '
         + 'generate per-point netlists (@@PARAM@@ substitution) and simulate them. Writes NN/netlist.spi, '
-        + 'ngspice.out, point_meta.json, sweep_progress.json and crash-safe bestPoints.json; waits synchronously.',
+        + 'ngspice.out, point_meta.json and sweep_progress.json; waits synchronously.',
       parameters: {
         run_dir: { type: 'string', required: true, description: 'Run directory holding template.spi and sweep_config.json' },
         max_parallel: { type: 'number', description: 'Concurrency (default: config max_parallel)' },

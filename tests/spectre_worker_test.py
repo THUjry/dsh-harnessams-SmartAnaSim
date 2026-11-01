@@ -175,7 +175,6 @@ def test_main_progress_and_markers():
         with tempfile.TemporaryDirectory() as tmp:
             cfg = base_config()
             cfg["parameters"] = {"x": [0, 1]}
-            cfg["best_metric"] = {"name": "m", "mode": "max"}
             with open(os.path.join(tmp, "template.scs"), "w", encoding="utf-8") as f:
                 f.write(TEMPLATE)
             with open(os.path.join(tmp, "sweep_config.json"), "w", encoding="utf-8") as f:
@@ -187,8 +186,6 @@ def test_main_progress_and_markers():
             assert prog["total_points"] == 2 and prog["succeeded"] == 2, prog
             assert prog["simulator"] == "spectre", prog
             assert open(os.path.join(tmp, ".simulator"), encoding="utf-8").read().strip() == "spectre"
-            best = json.load(open(os.path.join(tmp, "bestPoints.json"), encoding="utf-8"))
-            assert best["value"] == 1, best
     finally:
         W.run_single_point = original_run
         W.resolve_spectre_cmd = original_resolve

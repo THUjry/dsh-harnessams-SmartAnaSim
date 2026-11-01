@@ -82,14 +82,14 @@ directory. Recognized fields:
    Format, dimension and bias<Vdd checks reject at the assembly layer.
 2. `ngspice_run_sweep(run_dir)` substitutes `@@PARAM@@` per point, runs
    `ngspice_con -b`, parses `name = value` measurements, and writes
-   `NN/point_meta.json`, `sweep_progress.json` (30 s cadence), crash-safe
-   `bestPoints.json`, `errlog.txt`, `.worker_started` and `.simulator`.
+   `NN/point_meta.json`, `sweep_progress.json` (30 s cadence),
+   `errlog.txt`, `.worker_started` and `.simulator`.
 
 The sweep config contract is documented in
 `scripts/ngspice/ngspice_sweep_worker.py` (`ngspice_cmd`, `ngspice_args`,
-`netlist_template`, `timeout_per_point`, `max_parallel`, `metrics_required`,
-`best_metric`). The batch engine (combinations, template substitution, progress,
-best points) is shared with Spectre.
+`netlist_template`, `timeout_per_point`, `max_parallel`, `metrics_required`).
+The batch engine (combinations, template substitution, progress)
+is shared with Spectre.
 
 ## Spectre channel
 
@@ -110,7 +110,6 @@ Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
   "timeout_per_point": 300,
   "max_parallel": 1,
   "metrics_required": [],
-  "best_metric": {"name": "...", "mode": "max"},
   "signals_from": "none",
   "license_wait_extension_sec": 120,
   "raw_progress_extension_sec": 120
@@ -228,7 +227,7 @@ echoes a `port_plan` to confirm.
 
 `sim_report(project_dir)` renders `sweep/Round*/top/results.json` into
 `Analysis/<project>_report.html`: summary cards, interactive Plotly metric
-charts, per-point table, best point. Plotly comes from a single workspace-level
+charts, per-point table. Plotly comes from a single workspace-level
 copy (`<workspace_root>/assets/plotly.min.js`, seeded on demand from an ancestor
 `assets/` / `src/assets/` / an installed `dsh-harnessams` package, or the
 workspace `plotly_asset` field); the CDN is the fallback. The Simulator header

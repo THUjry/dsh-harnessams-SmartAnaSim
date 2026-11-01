@@ -10,7 +10,6 @@ Mechanisms (identical for both simulators):
 - crash-safe JSON writes (sibling .tmp + os.replace);
 - sweep_progress.json aggregate with a uniform point/status shape (written on a
   30 s cadence while running and once at the end);
-- bestPoints.json persisted as soon as a better point is found;
 - .worker_started / .compute_node / .simulator markers and errlog.txt helper.
 
 Simulator-specific behaviour (command line, output parsing, timeout policy)
@@ -72,53 +71,6 @@ def build_netlist(text, params):
 def point_name(idx):
     """Two-digit point name below 100, plain decimal from 100 on."""
     return "%02d" % idx if idx < 100 else str(idx)
-
-
-class BestPoints:
-    """Per-point bestPoints.json updates (crash-safe: every better point is
-    atomically written to disk immediately)."""
-
-    def __init__(self, work_dir, spec):
-        self.path = os.path.join(work_dir, "bestPoints.json")
-        self.name = (spec or {}).get("name")
-        self.mode = (spec or {}).get("mode", "max")
-        self.best = None
-        if not self.name:
-            self.path = None
-            return
-        if os.path.isfile(self.path):
-            try:
-                with open(self.path, encoding="utf-8-sig") as f:
-                    self.best = json.load(f)
-            except (OSError, ValueError):
-                self.best = None
-
-    def update(self, meta):
-        if not self.path or meta.get("status") not in ("success", "partial"):
-            return
-        val = (meta.get("signals") or {}).get(self.name)
-        if val is None or isinstance(val, bool):
-            return
-        try:
-            val = float(val)
-        except (TypeError, ValueError):
-            return
-        if self.best is not None:
-            cur = self.best.get("value")
-            better = val > cur if self.mode == "max" else val < cur
-            if not better:
-                return
-        self.best = {
-            "metric": self.name,
-            "mode": self.mode,
-            "value": val,
-            "point_index": meta["point_index"],
-            "point_name": meta["point_name"],
-            "params": meta["params"],
-            "signals": meta["signals"],
-            "updated_at": utc_now(),
-        }
-        atomic_write_json(self.path, self.best)
 
 
 def init_worker_state(work_dir, total, node=None):
@@ -229,7 +181,7 @@ def load_point_metas(work_dir, combos):
 
 __all__ = [
     "PARAM_RE", "PROGRESS_PERIOD_SEC", "generate_combinations", "build_netlist",
-    "point_name", "BestPoints", "init_worker_state", "write_simulator",
+    "point_name", "init_worker_state", "write_simulator",
     "read_simulator", "write_progress", "load_point_metas", "utc_now",
     "atomic_write_json", "write_errlog",
 ]

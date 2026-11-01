@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Removed — 2026-11-01
+
+- **bestPoints feature deleted** (user decision): the `BestPoints` engine class,
+  the workers' `best_metric` config contract, `results.json.best_points`, and the
+  report's "Best point" section. The sweep data contract is now
+  `point_meta.json` / `sweep_progress.json` only; ranking/enrichment ideas from
+  the 2026-11-01 audit are deferred (none implemented as a replacement).
+
 ### Changed — 2026-10-31 (breaking)
 
 - **Three-channel refactor**: the plugin is now organised by simulator family

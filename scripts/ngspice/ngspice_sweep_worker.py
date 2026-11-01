@@ -2,7 +2,7 @@
 """HarnessAMS local ngspice batch sweep worker.
 
 Shared batch mechanics (template substitution, combination generation, point
-directories, progress, best points, markers) live in
+directories, progress, markers) live in
 scripts/common/common_sweep_engine.py.
 
 ngspice specifics:
@@ -10,9 +10,7 @@ ngspice specifics:
   the process -> status=timeout;
 - meas results are parsed straight from stdout lines of the form `name = value`;
 - concurrency via ThreadPoolExecutor (external processes; more robust than
-  multiprocessing on Windows);
-- bestPoints.json is updated per point when best_metric is configured: every
-  better point hits the disk immediately, so a crash loses nothing.
+  multiprocessing on Windows).
 
 Usage (inside a workspace, relative to the run directory):
   python <plugin scripts>/ngspice/ngspice_sweep_worker.py --work-dir sweep/Round1/top
@@ -28,8 +26,7 @@ sweep_config.json contract:
     "netlist_template": "template.spi",
     "timeout_per_point": 120,
     "max_parallel": 4,
-    "metrics_required": ["dc_gain_db", ...],       // success criterion; default: all stdout meas
-    "best_metric":  {"name": "dc_gain_db", "mode": "max"|"min"}   // optional
+    "metrics_required": ["dc_gain_db", ...]        // success criterion; default: all stdout meas
   }
 
 Workspace discovery: walks upward for harnessams.json (bare form or inside
@@ -50,7 +47,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common.common_sweep_engine import (  # noqa: E402
-    PROGRESS_PERIOD_SEC, BestPoints, atomic_write_json, build_netlist,
+    PROGRESS_PERIOD_SEC, atomic_write_json, build_netlist,
     generate_combinations, init_worker_state, point_name, utc_now,
     write_errlog, write_progress, write_simulator,
 )
@@ -200,7 +197,6 @@ def main(argv=None):
         return 2
 
     max_parallel = args.max_parallel or int(config.get("max_parallel", 4))
-    best = BestPoints(work_dir, config.get("best_metric") or {})
     write_simulator(work_dir, "ngspice")
     init_worker_state(work_dir, len(combos))
 
@@ -226,7 +222,6 @@ def main(argv=None):
                             "simulator": "ngspice",
                             "params": combos[i], "status": "error",
                             "error_message": "worker exception: %s" % e, "signals": {}}
-            best.update(metas[i])
             with print_lock:
                 m = metas[i]
                 print("[sweep] %s %s %ss" % (m["point_name"], m["status"],
@@ -247,9 +242,6 @@ def main(argv=None):
     n_partial = sum(1 for m in metas if m and m.get("status") == "partial")
     print("[sweep] done: %d success / %d partial / %d failed in %.1fs"
           % (n_ok, n_partial, total - n_ok - n_partial, time.monotonic() - t0))
-    if best.path and best.best:
-        print("[sweep] best %s (%s) = %s @ point %s"
-              % (best.name, best.mode, best.best["value"], best.best["point_name"]))
     return 0 if prog["status"] in ("completed",) else 1
 
 

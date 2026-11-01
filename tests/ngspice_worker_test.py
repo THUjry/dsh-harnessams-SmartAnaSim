@@ -125,7 +125,6 @@ def test_main_progress_and_markers():
         with tempfile.TemporaryDirectory() as tmp:
             cfg = base_config(ngspice_cmd=sys.executable)
             cfg["parameters"] = {"x": [0, 1]}
-            cfg["best_metric"] = {"name": "gain", "mode": "max"}
             make_work(tmp, config=cfg)
             rc = W.main(["--work-dir", tmp, "--config", "sweep_config.json", "--max-parallel", "2"])
             assert rc == 0, rc
@@ -133,8 +132,6 @@ def test_main_progress_and_markers():
             assert prog["status"] == "completed" and prog["total_points"] == 2, prog
             assert prog["simulator"] == "ngspice", prog
             assert open(os.path.join(tmp, ".simulator"), encoding="utf-8").read().strip() == "ngspice"
-            best = json.load(open(os.path.join(tmp, "bestPoints.json"), encoding="utf-8"))
-            assert best["value"] == 41, best
     finally:
         W.run_single_point = original_run
 

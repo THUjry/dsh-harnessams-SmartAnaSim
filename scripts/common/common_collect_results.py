@@ -99,15 +99,7 @@ def main(argv=None):
         "n_failed": sum(1 for p in points if p["status"] not in ("success", "partial")),
         "points": points,
         "summary": summarize(points),
-        "best_points": None,
     }
-    best_path = os.path.join(work_dir, "bestPoints.json")
-    if os.path.isfile(best_path):
-        try:
-            with open(best_path, encoding="utf-8") as f:
-                result["best_points"] = json.load(f)
-        except (OSError, ValueError):
-            pass
     out = os.path.abspath(args.out) if args.out else os.path.join(work_dir, "results.json")
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
