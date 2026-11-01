@@ -1,6 +1,7 @@
 // Plugin metadata, tool surface, parameter-schema, and family-toggle tests.
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { name, inject, apply, toolDefinitions, Config } from '../src/index.js'
 import { compileParameters, makeTool } from '../src/tool.js'
 
@@ -31,6 +32,13 @@ test('Config is a real schemastery schema (cordis resolveConfig requires ~standa
   const resolved = Config['~standard'].validate({})
   assert.equal(resolved.issues, undefined)
   assert.deepEqual(resolved.value, { ngspice: true, spectre: true, snp: true })
+})
+
+test('schemastery ships as a runtime dependency (installed bundles do not get devDependencies)', async () => {
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(pkg.dependencies?.['@deepseek-ai/schemastery'], '^3.18.1')
+  assert.equal(pkg.peerDependencies?.['@deepseek-ai/schemastery'], undefined)
+  assert.equal(pkg.devDependencies?.['@deepseek-ai/schemastery'], undefined)
 })
 
 test('family toggles select the registered tool families (only explicit false trims)', () => {

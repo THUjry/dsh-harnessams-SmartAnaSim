@@ -89,8 +89,15 @@ is shared with Spectre.
 
 Each simulator family registers only when its DSH plugin-config switch is not
 explicitly `false` (all default `true` — the full 7-tool surface). Change the
-switches in the DSH settings page for this plugin and cordis hot-swaps it: the
-fiber restarts and the new selection registers immediately, no reboot.
+config and cordis hot-swaps the plugin: the fiber restarts and the new
+selection registers immediately, no reboot.
+
+> DSH 0.2.1-rc.2 does not auto-render a bundle's config: switches appear in
+> the plugin manager only when the bundle ships a browser half registering the
+> `plugins.row.config` slot (key `<package>#<row id>`). This package ships no
+> browser half yet (deferred 2026-11-01), so edit the booleans through the
+> profile config layer; the `Config` export still drives defaults and the
+> hot-swap server-side.
 
 ```json
 {
@@ -100,7 +107,8 @@ fiber restarts and the new selection registers immediately, no reboot.
 }
 ```
 
-The schema is `@deepseek-ai/schemastery` (peer+dev dependency; the official
+The schema is `@deepseek-ai/schemastery` (a runtime `dependencies` entry, like
+`dsh-remote` — installed bundles do not get devDependencies; the official
 `tool-fs` plugin uses the same per-tool boolean-config pattern).
 
 ## Spectre channel
