@@ -1,17 +1,20 @@
 # HarnessAMS-SmartAnaSim
 
-> Simulator plugin: ngspice and Spectre channels (code-driven netlist assembly with
+> Simulator plugin: Spectre channel (code-driven netlist assembly with
 > hard PDK isolation) and S-parameter reading/extraction. Simulator-specific code
 > only — the generic remote LSF channel (`bsub_*`) and the sweep-result analysis
 > tools (`sim_*`, HTML reports) live in the top-level `HarnessAMS` plugin.
 > npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install
 > paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
+>
+> The former ngspice channel was removed on 2026-11-02 (sky130 runs in Spectre
+> after model transcription; ngspice carried only demo value) — restore it from
+> this repo's `ngspice` branch.
 
-## Tool surface (7)
+## Tool surface (5)
 
 | Family | Tool | Runs where |
 |---|---|---|
-| ngspice | `ngspice_assemble`, `ngspice_run_sweep` | local ngspice (portable build) |
 | Spectre | `spectre_assemble`, `spectre_run_sweep`, `spectre_parse` | the host executing this plugin (local Spectre) |
 | S-parameter | `snp_read`, `snp_extract` | local (tools only, no UI) |
 
@@ -23,13 +26,11 @@ the Spectre tools never touch the network.
 
 ## Why the split
 
-- `assemble` is simulator-specific: ngspice writes a SPICE deck and checks
-  `.control`/`.lib`/X-prefix rules; Spectre writes `.scs` and checks
+- `assemble` is simulator-specific: it writes `.scs` and checks
   `simulator lang=spectre`, placeholders, include paths and the unit-suffix rule
   (a bare geometry number means metres in Spectre).
-- `run_sweep` is simulator-specific: a local ngspice subprocess with stdout
-  measurements vs. a local Spectre process with psfascii output and smart
-  timeouts (license wait / output-progress extensions).
+- `run_sweep` is simulator-specific: a local Spectre process with psfascii
+  output and smart timeouts (license wait / output-progress extensions).
 - The generic batch channel and the data-contract analysis operations
   (collect / progress / report / trash) are **not** simulator details — they
   moved to the top-level `dsh-harnessams` plugin (2026-11-01 redistribution).
@@ -38,15 +39,14 @@ the Spectre tools never touch the network.
 
 ```
 src/
-  index.js                 entry: registers the 7 tools (plain JS, no build chain)
+  index.js                 entry: registers the 5 tools (plain JS, no build chain)
   tool.js                  parameter DSL -> valid JSON Schema compiler + validation
   py.js                    python spawn channel, script paths, error text
   projects.js              project gen_*.py discovery/execution (assembly bridge)
   tools/
-    ngspice.js  spectre.js  snp.js
+    spectre.js  snp.js
 scripts/
   common/    common_workspace.py common_units.py common_sweep_engine.py
-  ngspice/   ngspice_sweep_worker.py ngspice_checks.py
   spectre/   spectre_sweep_worker.py spectre_checks.py spectre_psf_parse.py
   snp/       snp_common.py snp_read.py snp_extract.py
 assets/numfallback.py      pure-stdlib numeric fallback for the snp_* scripts
@@ -65,30 +65,14 @@ directory. Recognized fields:
 
 | Field | Used by |
 |---|---|
-| `ngspice_cmd`, `pdk_lib` | ngspice worker / assembly |
+| `pdk_lib` | Spectre assembly (include-path checks) |
 | `spectre_cmd` | local Spectre worker (falls back to PATH) |
 | `trash_dir`, `plotly_asset`, `remote_python`, `remote_scripts_dir`, `sim_scripts_dir` | consumed by the top-level `dsh-harnessams` plugin's analysis/batch/report tools (this package only supplies the `scripts/` tree that `sim_scripts_dir` points at) |
-
-## ngspice channel
-
-1. `ngspice_assemble(project_dir)` runs the project's `script/analysis/gen_*.py`
-   (`design_params.json` -> `template.spi` + `sweep_config.json` + metadata).
-   Format, dimension and bias<Vdd checks reject at the assembly layer.
-2. `ngspice_run_sweep(run_dir)` substitutes `@@PARAM@@` per point, runs
-   `ngspice_con -b`, parses `name = value` measurements, and writes
-   `NN/point_meta.json`, `sweep_progress.json` (30 s cadence),
-   `errlog.txt`, `.worker_started` and `.simulator`.
-
-The sweep config contract is documented in
-`scripts/ngspice/ngspice_sweep_worker.py` (`ngspice_cmd`, `ngspice_args`,
-`netlist_template`, `timeout_per_point`, `max_parallel`, `metrics_required`).
-The batch engine (combinations, template substitution, progress)
-is shared with Spectre.
 
 ## Tool family toggles
 
 Each simulator family registers only when its DSH plugin-config switch is not
-explicitly `false` (all default `true` — the full 7-tool surface). Change the
+explicitly `false` (all default `true` — the full 5-tool surface). Change the
 config and cordis hot-swaps the plugin: the fiber restarts and the new
 selection registers immediately, no reboot.
 
@@ -101,7 +85,6 @@ selection registers immediately, no reboot.
 
 ```json
 {
-  "ngspice": true,
   "spectre": true,
   "snp": true
 }
@@ -230,12 +213,9 @@ with it. S-parameter curve dashboards are not part of this round: use
 ## Validation
 
 - `node --test` from the repo root (tool schema/registration, script parsing +
-  naming, PSF parsing, ngspice and Spectre worker statuses with fake process
-  layers, and the S-parameter regression suite; the bsub-channel and
+  naming, PSF parsing, Spectre worker statuses with a fake process layer,
+  and the S-parameter regression suite; the bsub-channel and
   report-injection tests moved to the HarnessAMS repo with the tools).
-- ngspice demo regression: a single-point rerun of demo1 (tt, 1.62 V, -40 C)
-  reproduced the recorded metrics bit-for-bit (`dc_gain_db` 42.8323,
-  `ugb_hz` 147379000, `phase_margin_deg` 71.6164, `noise` 2.787523e-05).
 - node1 Spectre dual-mode acceptance through the plugin tools, no direct shell or
   Python (2026-10-31, Broadband4 Round1 template, 2 states at 65 C):
   `bsub_submit(scheduler="none")` ran on node1 (`compute_node=node1`, record
@@ -249,7 +229,7 @@ with it. S-parameter curve dashboards are not part of this round: use
 
 ## What the package ships
 
-`src/`, `scripts/{common,ngspice,spectre,snp}` (11 `.py`), `assets/numfallback.py`,
+`src/`, `scripts/{common,spectre,snp}` (9 `.py`), `assets/numfallback.py`,
 `cordis.patch.yml`, plus npm auto-included `package.json`, `README.md`, `LICENSE`.
 Deliberately not shipped: `tests/` (including `tests/data/` and the manual
 comparison helper) and any Plotly copy. `PUBLISH.md` holds the tarball checks.

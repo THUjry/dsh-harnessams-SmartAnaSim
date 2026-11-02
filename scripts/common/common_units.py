@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Assembly-layer unit normalization and bias checks shared by both simulators.
+"""Assembly-layer unit normalization and bias checks for the Spectre channel.
 
 Design contract:
-- ngspice lengths: a bare number means um (the sky130 model library sets
-  scale=1u, so netlists carry no u suffix); "96u" / "500n" are normalized to a
-  bare um number.
 - spectre lengths: the suffix is REQUIRED and preserved ("1.5u", "60n"),
   because a bare number in a Spectre netlist means metres (the unitless-value
   trap: a 6.0 ohm poly resistor becomes ~6 m long).
@@ -17,41 +14,12 @@ Pure standard library; imported by the check libraries and the demo gen scripts.
 """
 import re
 
-_LEN_SUFFIX = {"u": 1.0, "n": 1e-3}          # input suffix -> um (n = 1e-3 um)
 _FREQ_SUFFIX = {"G": 1e9, "M": 1e6, "k": 1e3, "meg": 1e6}  # input suffix -> Hz
 _CUR_SUFFIX = {"p": 1e-12, "n": 1e-9, "u": 1e-6, "m": 1e-3}
 
 
 class CheckError(ValueError):
     """Assembly-layer rejection; the message is a user-facing description."""
-
-
-def norm_length(name, value, positive=True):
-    """ngspice length normalization: bare number = um; '96u' = 96 um; '500n' = 0.5 um.
-    Returns a bare um number (the value written verbatim into SPICE netlists)."""
-    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
-        raise CheckError("%s: length must be a number or a u/n-suffixed string, got %r"
-                         % (name, value))
-    if isinstance(value, (int, float)):
-        um = float(value)
-        src = repr(value)
-    else:
-        text = value.strip()
-        if re.fullmatch(r"[+-]?[0-9]*\.?[0-9]+([eE][+-]?[0-9]+)?", text):
-            um = float(text)                      # bare numeric string = um
-        else:
-            m = re.fullmatch(r"([0-9]*\.?[0-9]+)\s*([un])", text, re.I)
-            if not m:
-                raise CheckError("%s: length accepts only a bare number (um) or a u/n suffix "
-                                 "(e.g. '96u'/'500n'), got %r" % (name, value))
-            um = float(m.group(1)) * _LEN_SUFFIX[m.group(2).lower()]
-        src = text
-    if positive and um <= 0:
-        raise CheckError("%s: length must be positive, got %s" % (name, src))
-    if um > 1e5:
-        raise CheckError("%s: length %s is outside the plausible range (>100 mm); "
-                         "wrong units suspected" % (name, src))
-    return fmt_num(um)
 
 
 def norm_length_si(name, value, positive=True):

@@ -6,7 +6,7 @@ simulation host, or a Windows host with Spectre on PATH). It is NOT coupled to
 any remote channel: use the generic bsub tools to submit this script to an LSF
 queue when Spectre lives on a cluster login/compute node.
 
-Mechanisms (shared with the ngspice worker via scripts/common/common_sweep_engine.py):
+Mechanisms (via scripts/common/common_sweep_engine.py):
 - @@PARAM@@ template substitution and combination generation;
 - per-point directory NN/ holding netlist.scs, netlist.scs.raw/, spectre.out and
   point_meta.json (atomic writes);

@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Removed — 2026-11-02 (ngspice channel)
+
+- **The ngspice tool family was removed** (user decision): `ngspice_assemble` /
+  `ngspice_run_sweep`, `scripts/ngspice/` (worker + checks), the ngspice-only
+  unit helper (`norm_length`, bare-number = um lengths) and its Config toggle
+  (the family switch set is now `spectre`/`snp`), and the ngspice parts of the
+  docs and tests. Tool surface 7 → 5. Reason: sky130 runs in Spectre after
+  model transcription; ngspice carried only simple demo value and was not worth
+  further development. The pre-removal state is preserved in this repo's
+  `ngspice` branch (cut at 4d4fe53).
+
 ### Added — 2026-11-01 (family toggles)
 
 - **DSH-native on-demand registration**: `src/index.js` exports a schemastery

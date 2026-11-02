@@ -6,7 +6,6 @@ import { name, inject, apply, toolDefinitions, Config } from '../src/index.js'
 import { compileParameters, makeTool } from '../src/tool.js'
 
 const EXPECTED = [
-  'ngspice_assemble', 'ngspice_run_sweep',
   'snp_extract', 'snp_read',
   'spectre_assemble', 'spectre_parse', 'spectre_run_sweep',
 ]
@@ -17,7 +16,7 @@ test('plugin metadata', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('apply registers the 7 simulator tools', () => {
+test('apply registers the 5 simulator tools', () => {
   const registered = []
   const ctx = {
     effect: (fn) => { fn() },
@@ -31,7 +30,7 @@ test('Config is a real schemastery schema (cordis resolveConfig requires ~standa
   assert.equal(typeof Config?.['~standard']?.validate, 'function')
   const resolved = Config['~standard'].validate({})
   assert.equal(resolved.issues, undefined)
-  assert.deepEqual(resolved.value, { ngspice: true, spectre: true, snp: true })
+  assert.deepEqual(resolved.value, { spectre: true, snp: true })
 })
 
 test('schemastery ships as a runtime dependency (installed bundles do not get devDependencies)', async () => {
@@ -45,24 +44,23 @@ test('family toggles select the registered tool families (only explicit false tr
   const names = (config) => toolDefinitions({}, config).map((d) => d.name).sort()
   assert.deepEqual(names({}), EXPECTED)
   assert.deepEqual(names(undefined), EXPECTED)
-  assert.deepEqual(names({ ngspice: false }), [
-    'snp_extract', 'snp_read', 'spectre_assemble', 'spectre_parse', 'spectre_run_sweep',
-  ])
-  assert.deepEqual(names({ spectre: false, snp: false }), ['ngspice_assemble', 'ngspice_run_sweep'])
-  assert.deepEqual(names({ ngspice: false, spectre: false, snp: false }), [])
+  assert.deepEqual(names({ spectre: false }), ['snp_extract', 'snp_read'])
+  assert.deepEqual(names({ snp: false }),
+    ['spectre_assemble', 'spectre_parse', 'spectre_run_sweep'])
+  assert.deepEqual(names({ spectre: false, snp: false }), [])
 
   const registered = []
   const ctx = {
     effect: (fn) => { fn() },
     tools: { register: (t) => registered.push(t.name) },
   }
-  apply(ctx, { ngspice: false, snp: false })
+  apply(ctx, { snp: false })
   assert.deepEqual(registered.sort(), ['spectre_assemble', 'spectre_parse', 'spectre_run_sweep'])
 })
 
 test('every tool compiles to an object-rooted JSON Schema with typed properties', () => {
   const defs = toolDefinitions()
-  assert.equal(defs.length, 7)
+  assert.equal(defs.length, 5)
   for (const def of defs) {
     const tool = makeTool(def)
     assert.equal(tool.parameters.type, 'object', `${def.name} parameters root`)
@@ -94,10 +92,10 @@ test('the schema compiler rejects required:false and accepts required:true', () 
 
 test('argument validation runs before execution', async () => {
   const defs = toolDefinitions()
-  const assembly = makeTool(defs.find((d) => d.name === 'ngspice_assemble'))
+  const assembly = makeTool(defs.find((d) => d.name === 'spectre_assemble'))
   await assert.rejects(() => assembly.execute({}), /missing required property "project_dir"/)
 
-  const sweep = makeTool(defs.find((d) => d.name === 'ngspice_run_sweep'))
+  const sweep = makeTool(defs.find((d) => d.name === 'spectre_run_sweep'))
   await assert.rejects(() => sweep.execute({ run_dir: 5 }), /"run_dir" must be a string/)
 
   const parse = makeTool(defs.find((d) => d.name === 'spectre_parse'))

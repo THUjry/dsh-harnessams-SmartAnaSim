@@ -13,7 +13,7 @@ run everything from here.
    - `npm pack --dry-run` (run from the repo root, which **is** the package). The tarball
      must contain exactly: `src/` (entry + tool/py/projects modules + `tools/` — no
      bsub/remote/shared, they moved to `dsh-harnessams`), `scripts/`
-     (11 `.py`: three `common_*`, two `ngspice_*`, three `spectre_*`, three `snp_*`),
+     (9 `.py`: three `common_*`, three `spectre_*`, three `snp_*`),
      `assets/numfallback.py`, `cordis.patch.yml`, plus the npm auto-included
      `package.json`, `README.md`, `LICENSE`.
    - Must NOT contain: `tests/` (including `tests/data/` and `tests/manual/`), any
@@ -24,11 +24,8 @@ run everything from here.
    - `npm publish` from this directory.
 4. Post-publish verification
    - `dsh plugin --profile web add dsh-harnessams-smart-ana-sim`, restart the profile
-     (`dsh --profile web`), confirm the **7** tools register:
-     `ngspice_assemble`, `ngspice_run_sweep`, `spectre_assemble`, `spectre_run_sweep`,
-     `spectre_parse`, `snp_read`, `snp_extract`.
-   - ngspice smoke: assemble + run a one-point project, then the top-level plugin's
-     `sim_collect`/`sim_report` (the report header shows `Simulator: ngspice`).
+     (`dsh --profile web`), confirm the **5** tools register:
+     `spectre_assemble`, `spectre_run_sweep`, `spectre_parse`, `snp_read`, `snp_extract`.
    - Spectre smoke: on a host with Spectre, run a two-point psfascii sweep and
      `spectre_parse`; then verify the top-level plugin's
      `bsub_submit`/`bsub_poll`/`bsub_fetch` against a machine whose remote project has

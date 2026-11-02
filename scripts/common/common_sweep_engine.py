@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Batch mechanics shared by the ngspice and spectre sweep workers.
+"""Batch mechanics shared by every sweep worker (Spectre today).
 
-Mechanisms (identical for both simulators):
+Mechanisms:
 - @@PARAM@@ template substitution (@@name@@ or @@name:format@@; unknown
   placeholders stay in place and are recorded in point_meta.unresolved_placeholders);
 - combination generation via itertools (cross_product by default, zip for

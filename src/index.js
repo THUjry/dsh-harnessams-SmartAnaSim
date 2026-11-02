@@ -4,7 +4,6 @@
 // Simulator families only (2026-11-01 redistribution: the generic remote batch
 // channel bsub_* and the simulator-agnostic analysis tools sim_* moved to the
 // top-level dsh-harnessams plugin — this package stays simulator-specific):
-//   ngspice_*  local ngspice assembly + batch sweep
 //   spectre_*  local Spectre assembly + batch sweep + psfascii parsing
 //   snp_*      S-parameter reading / device extraction
 //
@@ -16,7 +15,6 @@
 // sim_scripts_dir, which points at this package's scripts/ tree).
 import z from '@deepseek-ai/schemastery'
 import { registerTools } from './tool.js'
-import { ngspiceTools } from './tools/ngspice.js'
 import { spectreTools } from './tools/spectre.js'
 import { snpTools } from './tools/snp.js'
 
@@ -25,17 +23,15 @@ export const inject = ['tools']
 
 // DSH-native per-family toggles (official tool-fs precedent): each simulator
 // family registers only when its switch is not explicitly false (defaults keep
-// the full 7-tool surface). Changing the config hot-swaps the plugin: cordis
+// the full 5-tool surface). Changing the config hot-swaps the plugin: cordis
 // restarts the fiber and apply() re-registers with the new selection.
 export const Config = z.object({
-  ngspice: z.boolean().default(true).description('Register the ngspice_* tool family (local ngspice assembly + batch sweep).'),
   spectre: z.boolean().default(true).description('Register the spectre_* tool family (local Spectre assembly + batch sweep + psfascii parsing).'),
   snp: z.boolean().default(true).description('Register the snp_* tool family (Touchstone reading / device extraction).'),
 })
 
 export function toolDefinitions(ctx = {}, config = {}) {
   return [
-    ...(config.ngspice !== false ? ngspiceTools() : []),
     ...(config.spectre !== false ? spectreTools() : []),
     ...(config.snp !== false ? snpTools() : []),
   ]
