@@ -27,6 +27,10 @@ export async function runPython(scriptRel, args, timeoutMs = 900_000, options = 
     maxBuffer: 32 * 1024 * 1024,
     windowsHide: true,
     encoding: 'utf8',
+    // Python < 3.15 encodes piped stdout by locale (cp936 on zh-CN Windows)
+    // while we decode utf-8 — force UTF-8 mode so non-ASCII paths in output
+    // (e.g. "[snp] wrote <path>") survive the round trip.
+    env: { ...process.env, PYTHONUTF8: '1' },
     ...options,
   })
 }

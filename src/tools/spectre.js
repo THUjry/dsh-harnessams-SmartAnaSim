@@ -1,6 +1,6 @@
 // spectre family: assembly bridge, local batch sweep, and PSF ASCII parsing.
 // Everything here runs on the host that executes the plugin; it is deliberately
-// independent of any remote/LSF channel (use the generic bsub_* tools to submit
+// independent of any remote/LSF channel (use the generic batch_* tools to submit
 // spectre/spectre_sweep_worker.py to a cluster).
 import { runAssembly } from '../projects.js'
 import { cliError, readJsonIfExists, resolveDir, runPython } from '../py.js'
@@ -12,7 +12,7 @@ export function spectreTools() {
       name: 'spectre_assemble',
       description: 'Assemble a Spectre sweep batch: runs the project\'s script/analysis/gen_*.py '
         + '(design_params.json -> Spectre template.scs + sweep_config.json + metadata) with the assembly-layer '
-        + 'format/placeholder/unit checks. Run this before spectre_run_sweep or bsub_submit.',
+        + 'format/placeholder/unit checks. Run this before spectre_run_sweep or batch_submit.',
       parameters: {
         project_dir: { type: 'string', required: true, description: 'Project root containing script/analysis/gen_*.py' },
         gen_script: { type: 'string', description: 'Assembly script filename (default: the unique gen_*.py under script/analysis)' },
@@ -31,7 +31,7 @@ export function spectreTools() {
       description: 'Run a local Spectre batch sweep on the host executing this plugin: for a run directory holding '
         + 'template.scs + sweep_config.json, generate per-point netlists (@@PARAM@@ substitution) and run Spectre. '
         + 'Writes NN/netlist.scs, netlist.scs.raw/, spectre.out, point_meta.json and sweep_progress.json. '
-        + 'Requires Spectre on this host; cluster runs use the suite\'s bsub_submit/bsub_poll/bsub_fetch.',
+        + 'Requires Spectre on this host; cluster runs use the suite\'s batch_submit/batch_poll/batch_fetch.',
       parameters: {
         run_dir: { type: 'string', required: true, description: 'Run directory holding template.scs and sweep_config.json' },
         max_parallel: { type: 'number', description: 'Concurrency (default: config max_parallel)' },

@@ -9,6 +9,7 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { snpTools } from '../src/tools/snp.js'
 
 const execFileAsync = promisify(execFile)
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -274,4 +275,42 @@ test('backend parity: SNP_FORCE_FALLBACK=1 matches numpy results', async () => {
     { SNP_FORCE_FALLBACK: '1' })
   approx(fb.j.summary.k, fa.j.summary.k, 1e-9, 'k parity')
   approx(fb.j.summary.srf1_hz, fa.j.summary.srf1_hz, 1e3, 'SRF parity')
+})
+
+// ---------------------------------------------------------------------------
+// Tool-face contract regressions (2026-11-09 code review): the JS tools parse
+// the Python "[snp] wrote <path>" lines instead of re-deriving the stem, and
+// the unphysical exit-1 result must surface as a structured ok=false return.
+// ---------------------------------------------------------------------------
+
+test('tool face: snp_read returns a summary for a params-CSV input (stem contract)', async () => {
+  // The Python side strips a previous _params_X suffix from the output stem;
+  // the old JS re-derivation did not, so x_params_S.csv lost its summary
+  // silently (readJsonIfExists -> null) — the exact bug this pins out.
+  const s = await synth('xfmr2', 'xfmr2.s2p')
+  const first = await readSnp(s.file) // touchstone -> <stem>_params_S.csv
+  const csv = path.join(first.dir, `${first.stem}_params_S.csv`)
+  const res = await snpTools()[0].execute({ file: csv })
+  assert.equal(res.ok, true)
+  assert.ok(res.summary, 'summary must not be null for a params-CSV input')
+  assert.equal(res.summary.param, 'S')
+  assert.equal(res.summary.n_ports, 2)
+})
+
+test('tool face: unphysical snp_extract (exit 1) returns ok=false WITH summary/port_plan', async () => {
+  // A tl line read as a transformer is non-physical (L collapses, |k|>1) —
+  // snp_extract.py writes the JSON and exits 1 by contract; the tool must
+  // surface the structured diagnosis instead of throwing it away.
+  const s = await synth('tl2', 'tl2.s2p')
+  const res = await snpTools()[1].execute({ file: s.file, type: 'transformer' })
+  assert.equal(res.ok, false)
+  assert.ok(res.port_plan, 'port_plan must survive the unphysical exit')
+  assert.ok(res.summary, 'summary must survive the unphysical exit')
+  assert.match(res.output, /\[snp\]/)
+})
+
+test('tool face: snp_extract with no JSON on failure still throws', async () => {
+  const missing = path.join(tmpdir(), `definitely-missing-${Date.now()}.s2p`)
+  await assert.rejects(() => snpTools()[1].execute({ file: missing, type: 'tl' }),
+    /snp_extract failed/)
 })

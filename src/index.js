@@ -2,8 +2,9 @@
 // dev-mount loads this file directly).
 //
 // Simulator families only (2026-11-01 redistribution: the generic remote batch
-// channel bsub_* and the simulator-agnostic analysis tools sim_* moved to the
-// top-level dsh-harnessams plugin — this package stays simulator-specific):
+// channel batch_* — renamed from bsub_* on 2026-11-09 — and the simulator-
+// agnostic analysis tools moved to the top-level dsh-harnessams plugin — this
+// package stays simulator-specific):
 //   spectre_*  local Spectre assembly + batch sweep + psfascii parsing
 //   snp_*      S-parameter reading / device extraction
 //
@@ -11,7 +12,7 @@
 // scripts shipped under scripts/ (assembly/check/adjudication logic lives in the
 // script layer; intermediate steps are not codified). Batch submission of these
 // workers to a cluster and the sweep-result analysis/report pipeline are owned
-// by the dsh-harnessams plugin (bsub_submit takes its worker from the workspace
+// by the dsh-harnessams plugin (batch_submit takes its worker from the workspace
 // sim_scripts_dir, which points at this package's scripts/ tree).
 import z from '@deepseek-ai/schemastery'
 import { registerTools } from './tool.js'

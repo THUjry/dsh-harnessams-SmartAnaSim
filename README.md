@@ -2,8 +2,9 @@
 
 > Simulator plugin: Spectre channel (code-driven netlist assembly with
 > hard PDK isolation) and S-parameter reading/extraction. Simulator-specific code
-> only — the generic remote LSF channel (`bsub_*`) and the sweep-result analysis
-> tools (`sim_*`, HTML reports) live in the top-level `HarnessAMS` plugin.
+> only — the generic remote LSF channel (`batch_*`, renamed from `bsub_*` on
+> 2026-11-09) and the sweep-result analysis tools (`sim_*`, HTML reports) live in
+> the top-level `HarnessAMS` plugin.
 > npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install
 > paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
 >
@@ -19,7 +20,7 @@
 | S-parameter | `snp_read`, `snp_extract` | local (tools only, no UI) |
 
 A cluster run reaches these workers through the **top-level plugin's** generic
-`bsub_*` tools: pick the `spectre/spectre_sweep_worker.py` worker (resolved under
+`batch_*` tools: pick the `spectre/spectre_sweep_worker.py` worker (resolved under
 the workspace `sim_scripts_dir`, which points at this package's `scripts/` tree)
 and pass its arguments. Nothing here mentions Spectre from the batch side, and
 the Spectre tools never touch the network.
@@ -98,7 +99,7 @@ The schema is `@deepseek-ai/schemastery` (a runtime `dependencies` entry, like
 
 `spectre_run_sweep` is a *local* channel: it runs on the host executing the
 plugin. Use it when DSH runs on a simulation host; otherwise submit the same
-worker through the bsub tools.
+worker through the batch tools.
 
 Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
 
@@ -140,22 +141,22 @@ include existence, and the u/n-suffix geometry rule.
 
 ## Cluster runs (through the top-level plugin)
 
-The generic remote batch channel (`bsub_submit` / `bsub_poll` / `bsub_fetch`)
-and the sweep-result analysis tools (`sim_collect` / `sim_progress` /
-`sim_report` / `sim_trash`) moved to the top-level `dsh-harnessams` plugin on
-2026-11-01. Typical remote Spectre round (see the HarnessAMS repo for the full
-channel contract — mirrors, live-session borrowing, the remote write fence and
-cluster gotchas):
+The generic remote batch channel (`batch_submit` / `batch_poll` / `batch_fetch`,
+renamed from `bsub_*` on 2026-11-09) and the sweep-result analysis tools
+(`sim_analysis` / `sim_progress` / `safe_trash`) moved to the top-level
+`dsh-harnessams` plugin on 2026-11-01. Typical remote Spectre round (see the
+HarnessAMS repo for the full channel contract — mirrors, live-session borrowing,
+the remote write fence and cluster gotchas):
 
 ```
-bsub_submit(run_dir="<proj>/sweep/Round1/top", machine_id="node1",
-            remote_dir="HarnessAMS/Round1",
-            worker="spectre/spectre_sweep_worker.py",     # resolved under sim_scripts_dir
-            worker_args=["--config", "sweep_config.json", "--max-parallel", "8"],
-            scheduler="lsf")                # or "none" for a login-host foreground run
-bsub_poll(run_dir="...")                     # repeat until state == completed
-bsub_fetch(run_dir="...", includes=["point_meta.json",
-            "*/netlist.scs.raw/sp.sp", "sweep_progress.json"])
+batch_submit(run_dir="<proj>/sweep/Round1/top", machine_id="node1",
+             remote_dir="HarnessAMS/Round1",
+             worker="spectre/spectre_sweep_worker.py",     # resolved under sim_scripts_dir
+             worker_args=["--config", "sweep_config.json", "--max-parallel", "8"],
+             scheduler="lsf")                # or "direct" for a login-host foreground run
+batch_poll(run_dir="...")                    # repeat until state == completed
+batch_fetch(run_dir="...", includes=["point_meta.json",
+             "*/netlist.scs.raw/sp.sp", "sweep_progress.json"])
 ```
 
 The uploaded worker tree is this package's `scripts/` directory (the workspace
@@ -214,7 +215,7 @@ with it. S-parameter curve dashboards are not part of this round: use
 
 - `node --test` from the repo root (tool schema/registration, script parsing +
   naming, PSF parsing, Spectre worker statuses with a fake process layer,
-  and the S-parameter regression suite; the bsub-channel and
+  and the S-parameter regression suite; the batch-channel and
   report-injection tests moved to the HarnessAMS repo with the tools).
 - node1 Spectre dual-mode acceptance through the plugin tools, no direct shell or
   Python (2026-10-31, Broadband4 Round1 template, 2 states at 65 C):

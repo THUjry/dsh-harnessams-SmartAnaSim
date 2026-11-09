@@ -3,7 +3,7 @@
 
 Runs Spectre point-by-point on the host that executes this script (a Linux
 simulation host, or a Windows host with Spectre on PATH). It is NOT coupled to
-any remote channel: use the generic bsub tools to submit this script to an LSF
+any remote channel: use the generic batch tools to submit this script to an LSF
 queue when Spectre lives on a cluster login/compute node.
 
 Mechanisms (via scripts/common/common_sweep_engine.py):
@@ -343,7 +343,7 @@ def main(argv=None):
     probe = spectre_cmd if os.path.isfile(spectre_cmd) else shutil.which(spectre_cmd)
     if not probe:
         msg = ("Spectre executable not found: %r (set sweep_config.spectre_cmd, the "
-               "workspace spectre_cmd, or --spectre-cmd; remote runs use the bsub tools)"
+               "workspace spectre_cmd, or --spectre-cmd; remote runs use the batch tools)"
                % spectre_cmd)
         write_errlog(work_dir, msg)
         print(msg, file=sys.stderr)

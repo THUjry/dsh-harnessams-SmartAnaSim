@@ -5,6 +5,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — 2026-11-09 (code-review follow-ups)
+
+- **snp tool face: output paths now come from the Python `[snp] wrote` lines**
+  instead of a local stem re-derivation. The old JS stem logic disagreed with
+  the Python suffix stripping (`_params_X` / `_extract_*`), so feeding a
+  params CSV back into `snp_read` silently returned `summary: null`
+  (regression-tested at the tool-face level).
+- **snp_extract exit 1 is a contract, not an error**: "unphysical, but the
+  JSON with summary/port_plan is still written" used to be swallowed by the
+  JS `execFile` rejection — the structured diagnosis never reached the model.
+  The tool now returns `ok: false` WITH `summary`/`port_plan` and only
+  rethrows when no JSON landed. Tool descriptions updated.
+- **numpy singular-matrix failures normalized**: `_inv` now converts
+  `numpy.linalg.LinAlgError` to `ZeroDivisionError` so both backends hit the
+  same drop-bad / SnpError paths (a bare LinAlgError used to escape as an
+  uncaught traceback — exit 1, no JSON, backends diverging on the same
+  input). Both snp `__main__` blocks also gained an unexpected-exception
+  guard that maps to exit 2, keeping the 0/1/2 contract intact.
+- **`write_params_csv` writes utf-8, not ascii**: the `# source=` header
+  embeds the input path, which is non-ASCII on a zh-CN Windows workspace —
+  the dump crashed with `UnicodeEncodeError` after succeeding.
+- **`PYTHONUTF8=1` forced for every spawned python** (`src/py.js`,
+  `src/projects.js`): Python < 3.15 encodes piped stdout by locale (cp936 on
+  zh-CN Windows) while the JS side decodes utf-8 — non-ASCII paths in tool
+  output came back as mojibake or crashed the writer.
+- Docs: cluster-run references renamed to `batch_*` / `scheduler=direct`.
+
 ### Changed — 2026-11-09 (snp test consolidation)
 
 - **Topology scenarios parameterized in `tests/snp.test.mjs`** (32 → 27

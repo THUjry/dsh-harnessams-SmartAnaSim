@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Compare two Spectre run directories (foreground vs bsub verification helper).
+"""Compare two Spectre run directories (foreground vs batch verification helper).
 
 Usage:
   python -B tests/manual/compare_spectre_runs.py <run-a> <run-b> [--tol 1e-9]

@@ -37,7 +37,7 @@ export async function runAssembly(projectDir, { genScript, outDir, simulator } =
     windowsHide: true,
     encoding: 'utf8',
     cwd: proj,
-    env: { ...process.env, HARNESSAMS_SIMULATOR: simulator || '' },
+    env: { ...process.env, HARNESSAMS_SIMULATOR: simulator || '', PYTHONUTF8: '1' },
   }).catch((e) => { throw new Error(`assembly failed: ${cliError(e)}`) })
   return { ok: true, output: String(stdout || '').trim(), project_dir: proj, simulator }
 }

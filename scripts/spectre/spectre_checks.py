@@ -15,7 +15,7 @@ Checks:
   numbers (Spectre reads a bare number as metres);
 - relative include/dspf_include files must exist; absolute include paths cannot
   be verified locally (warning unless strict_includes);
-- the uploaded template name should be ``template.scs`` (warning; the bsub
+- the uploaded template name should be ``template.scs`` (warning; the batch
   uploader promotes this to an error).
 
 Pure standard library.
@@ -110,7 +110,7 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
 
     if template_name and os.path.basename(template_name) != "template.scs":
         warnings.append("naming: netlist_template should be 'template.scs' "
-                        "(the remote bsub uploader always names it template.scs)")
+                        "(the remote batch uploader always names it template.scs)")
 
     for s in stripped:
         m = _INCLUDE.match(s)

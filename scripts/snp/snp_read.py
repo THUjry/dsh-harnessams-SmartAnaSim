@@ -127,4 +127,10 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as e:  # keep the 0/2 exit-code contract intact
+        print("[snp] error: unexpected failure: %s" % e, file=sys.stderr)
+        sys.exit(2)

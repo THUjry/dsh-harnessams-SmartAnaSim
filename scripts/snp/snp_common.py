@@ -59,7 +59,15 @@ def _load_backend():
             import numpy as _np
 
             def _inv(a):
-                return _np.linalg.inv(_np.array(a, dtype=complex)).tolist()
+                try:
+                    return _np.linalg.inv(_np.array(a, dtype=complex)).tolist()
+                except _np.linalg.LinAlgError as e:
+                    # numfallback raises ZeroDivisionError on a singular input;
+                    # normalize so both backends hit the same drop-bad / SnpError
+                    # paths in to_z / z_to_y / schur_ground. A bare LinAlgError
+                    # used to escape as an uncaught traceback (exit 1, no JSON),
+                    # splitting the two backends' behavior on the same input.
+                    raise ZeroDivisionError(str(e))
 
             def _mul(a, b):
                 return (_np.array(a, dtype=complex) @ _np.array(b, dtype=complex)).tolist()
@@ -379,7 +387,10 @@ def write_params_csv(data, out_path):
             for j in range(n):
                 v = m[i][j]
                 lines.append("%.10e,%d,%d,%.12e,%.12e" % (f, i + 1, j + 1, v.real, v.imag))
-    Path(out_path).write_text("\n".join(lines) + "\n", encoding="ascii", newline="\n")
+    # utf-8: the '# source=' header embeds the input file's absolute path,
+    # which is non-ASCII on a zh-CN Windows workspace (ascii raised
+    # UnicodeEncodeError after the dump itself had already succeeded).
+    Path(out_path).write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
 
 def parse_params_csv(path):
