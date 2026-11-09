@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — 2026-11-09 (snp test consolidation)
+
+- **Topology scenarios parameterized in `tests/snp.test.mjs`** (32 → 27
+  cases, 27/27 green; no fixture or assertion changes): the three tl 4-port
+  cases fold into one (default pairing + scrambled auto-fix), the three
+  separate transformer topology cases fold into one matrix case (3-port
+  roles / 4-5-6-port taps / scrambled explicit remap) sharing an
+  `approxXfmr` triple assertion helper, and the three coupled_tl cases fold
+  into one (auto mapping / default grouping / theory-gate negative). Real-data
+  regressions, round trips and backend parity are untouched.
+
 ### Removed — 2026-11-02 (ngspice channel)
 
 - **The ngspice tool family was removed** (user decision): `ngspice_assemble` /

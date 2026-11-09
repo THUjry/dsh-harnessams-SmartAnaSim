@@ -52,6 +52,14 @@ function approx(actual, expected, tol, label = '') {
   assert.ok(ok, `${label} expected ~${expected} +-${tol}, got ${actual}`)
 }
 
+// The synthetic coupled transformer always has L1=100p / L2=400p / k=0.9 —
+// every topology scenario below re-asserts the same triple.
+function approxXfmr(j, label = '') {
+  approx(j.summary.L1_H, 100e-12, 2e-12, `${label} L1`)
+  approx(j.summary.L2_H, 400e-12, 8e-12, `${label} L2`)
+  approx(j.summary.k, 0.9, 0.01, `${label} k`)
+}
+
 const GHz = 1e9
 
 test('tl: ideal 2-port line (touchstone + Z-params CSV agree)', async () => {
@@ -69,27 +77,24 @@ test('tl: ideal 2-port line (touchstone + Z-params CSV agree)', async () => {
   approx(j2.summary.theta_deg, thetaExp, 0.2, 'theta (csv)')
 })
 
-test('tl: 4-port differential line (default pairing)', async () => {
+test('tl: 4-port differential line (default pairing; scrambled pairing auto-fixed)', async () => {
   const s = await synth('tl4', 'tl4.s4p')
   const { j } = await extract(s.file, 'tl', ['--freq-hz', '20e9'])
   approx(j.summary.Zc_ohm.re, 100, 0.5, 'Zc_diff.re')
   const thetaExp = 90 * j.freq_hz / 20e9
   approx(j.summary.theta_deg, thetaExp, 0.3, 'theta')
-})
 
-test('tl: 4-port scrambled pairing found by auto adjustment', async () => {
-  const s = await synth('tl4s', 'tl4s.s4p')
-  const { j } = await extract(s.file, 'tl', ['--freq-hz', '20e9'])
-  assert.equal(j.port_plan.origin, 'auto')
-  approx(j.summary.Zc_ohm.re, 100, 0.5, 'Zc_diff.re')
+  // scrambled pairing is detected and auto-corrected
+  const sc = await synth('tl4s', 'tl4s.s4p')
+  const sj = await extract(sc.file, 'tl', ['--freq-hz', '20e9'])
+  assert.equal(sj.j.port_plan.origin, 'auto')
+  approx(sj.j.summary.Zc_ohm.re, 100, 0.5, 'Zc_diff.re (auto)')
 })
 
 test('transformer: 2-port file (L/Q/k/SRF/Gmax)', async () => {
   const s = await synth('xfmr2', 'x.s2p')
   const { j } = await extract(s.file, 'transformer', ['--freq-hz', '2e9'])
-  approx(j.summary.L1_H, 100e-12, 2e-12, 'L1')
-  approx(j.summary.L2_H, 400e-12, 8e-12, 'L2')
-  approx(j.summary.k, 0.9, 0.01, 'k')
+  approxXfmr(j, 'xfmr2')
   approx(j.summary.k_abs, 0.9, 0.01, '|k|')
   const q1Exp = 2 * Math.PI * j.freq_hz * 100e-12 / 1.0
   approx(j.summary.Q1, q1Exp, 0.03, 'Q1')
@@ -98,36 +103,29 @@ test('transformer: 2-port file (L/Q/k/SRF/Gmax)', async () => {
   assert.ok(j.summary.gmax_db === null || j.summary.gmax_db < 0, 'passive Gmax < 0 dB')
 })
 
-test('transformer: 3-port (primary differential + secondary single-ended)', async () => {
-  const s = await synth('xfmr3', 'x.s3p')
-  const { j } = await extract(s.file, 'transformer', ['--freq-hz', '2e9'])
-  assert.equal(j.port_plan.roles[0].mode, 'differential')
-  assert.equal(j.port_plan.roles[1].mode, 'single-ended')
-  approx(j.summary.L1_H, 100e-12, 2e-12, 'L1')
-  approx(j.summary.L2_H, 400e-12, 8e-12, 'L2')
-  approx(j.summary.k, 0.9, 0.01, 'k')
-})
+test('transformer: topology matrix (3-port roles, 4/5/6-port taps, scrambled explicit remap)', async () => {
+  // 3-port: primary differential + secondary single-ended
+  const s3 = await synth('xfmr3', 'x.s3p')
+  const j3 = await extract(s3.file, 'transformer', ['--freq-hz', '2e9'])
+  assert.equal(j3.j.port_plan.roles[0].mode, 'differential')
+  assert.equal(j3.j.port_plan.roles[1].mode, 'single-ended')
+  approxXfmr(j3.j, 'xfmr3')
 
-test('transformer: 4/5/6-port with center taps (default topologies)', async () => {
+  // 4/5/6-port with center taps: the default topologies
   for (const [kind, name, n] of [['xfmr4', 'x.s4p', 4], ['xfmr5', 'x.s5p', 5], ['xfmr6', 'x.s6p', 6]]) {
     const s = await synth(kind, name)
     const { j } = await extract(s.file, 'transformer', ['--freq-hz', '2e9'])
     assert.equal(j.n_ports, n)
     assert.equal(j.port_plan.origin, 'default')
-    approx(j.summary.L1_H, 100e-12, 2e-12, `${kind} L1`)
-    approx(j.summary.L2_H, 400e-12, 8e-12, `${kind} L2`)
-    approx(j.summary.k, 0.9, 0.01, `${kind} k`)
+    approxXfmr(j, kind)
   }
-})
 
-test('transformer: scrambled 5-port remapped by explicit coil/ct', async () => {
-  const s = await synth('xfmr5_scram', 'x.s5p')
-  const { j } = await extract(s.file, 'transformer',
+  // scrambled 5-port remapped by explicit coil/ct
+  const ss = await synth('xfmr5_scram', 'x.s5p')
+  const js = await extract(ss.file, 'transformer',
     ['--freq-hz', '2e9', '--coil1', '2,4', '--ct1', '5', '--coil2', '1,3'])
-  assert.equal(j.port_plan.origin, 'explicit')
-  approx(j.summary.L1_H, 100e-12, 2e-12, 'L1')
-  approx(j.summary.L2_H, 400e-12, 8e-12, 'L2')
-  approx(j.summary.k, 0.9, 0.01, 'k')
+  assert.equal(js.j.port_plan.origin, 'explicit')
+  approxXfmr(js.j, 'xfmr5_scram')
 })
 
 test('transformer: extraction-time single-ended (--se)', async () => {
@@ -161,7 +159,8 @@ test('inductor: 1/2/3-port, differential and tap-grounded views', async () => {
   approx(g.j.summary.L_H, 200e-12, 4e-12, 'L (ct grounded)')
 })
 
-test('coupled_tl: 4-port scrambled mapping auto-detected, theory_ok=1', async () => {
+test('coupled_tl: port mapping (auto/default) and the theory gate', async () => {
+  // scrambled 4-port mapping auto-detected, theory holds
   const s = await synth('ctl4s', 'c.s4p')
   const { j } = await extract(s.file, 'coupled_tl', ['--freq-hz', '30e9'])
   assert.equal(j.port_plan.origin, 'auto')
@@ -170,22 +169,20 @@ test('coupled_tl: 4-port scrambled mapping auto-detected, theory_ok=1', async ()
   approx(j.summary.theta_e_deg, 90 * j.freq_hz / 30e9, 0.3, 'theta_e')
   approx(j.summary.k, 30 / 110, 0.005, 'k')
   assert.equal(j.summary.theory_ok, 1)
-})
 
-test('coupled_tl: 8-port differential (default pair grouping)', async () => {
-  const s = await synth('ctl8', 'c.s8p')
-  const { j } = await extract(s.file, 'coupled_tl', ['--freq-hz', '30e9'])
-  assert.equal(j.port_plan.origin, 'default')
-  approx(j.summary.Z0e_ohm.re, 70, 0.5, 'Z0e')
-  approx(j.summary.Z0o_ohm.re, 40, 0.5, 'Z0o')
-  assert.equal(j.summary.theory_ok, 1)
-})
+  // 8-port differential: default pair grouping, same synthetic line params
+  const s8 = await synth('ctl8', 'c.s8p')
+  const j8 = await extract(s8.file, 'coupled_tl', ['--freq-hz', '30e9'])
+  assert.equal(j8.j.port_plan.origin, 'default')
+  approx(j8.j.summary.Z0e_ohm.re, 70, 0.5, 'Z0e (8p)')
+  approx(j8.j.summary.Z0o_ohm.re, 40, 0.5, 'Z0o (8p)')
+  assert.equal(j8.j.summary.theory_ok, 1)
 
-test('coupled_tl: theory gate flags a non-two-mode device', async () => {
-  const s = await synth('ctl4bad', 'c.s4p')
-  const { j } = await extract(s.file, 'coupled_tl', ['--freq-hz', '30e9'])
-  assert.equal(j.summary.theory_ok, 0)
-  assert.ok(j.summary.rel_offblock > 0.05, 'residual above the gate')
+  // the theory gate flags a non-two-mode device
+  const bad = await synth('ctl4bad', 'c.s4p')
+  const jb = await extract(bad.file, 'coupled_tl', ['--freq-hz', '30e9'])
+  assert.equal(jb.j.summary.theory_ok, 0)
+  assert.ok(jb.j.summary.rel_offblock > 0.05, 'residual above the gate')
 })
 
 test('real data: EMX .s4p coupler regression (vs reference key results)', async () => {
