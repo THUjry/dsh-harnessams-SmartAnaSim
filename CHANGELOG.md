@@ -1,181 +1,73 @@
 # Changelog
 
-All notable changes to this project are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow semver.
+All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow semver.
 
 ## [Unreleased]
 
 ### Changed — 2026-11-10 (sweep timeout default)
 
-- **`spectre_run_sweep` overall timeout default `1800` → `1200`** (tool
-  parameter description and the execute fallback): aligns the local channel
-  with the remote direct budget instead of exceeding it. `timeout_sec` still
-  overrides; per-point limits are unchanged (sweep config). README's Spectre
-  channel section states the default. Tests 30/30 re-run green.
+- **`spectre_run_sweep` overall timeout default `1800` → `1200`** (tool parameter description and the execute fallback): aligns the local channel with the remote direct budget instead of exceeding it. `timeout_sec` still overrides; per-point limits are unchanged (sweep config). README's Spectre channel section states the default. Tests 30/30 re-run green.
 
 ### Changed — 2026-11-10 (host upgrade re-pin)
 
-- **`engines.dsh` re-pinned `0.2.1-rc.2` → `0.2.2-rc.1`** (package.json,
-  package-lock.json): DSH 0.2.2 enforces the engines check even for
-  dev-mount rows, so the exact pin must track the running host. README's
-  no-auto-render config note re-checked against 0.2.2-rc.1 sources (still
-  true). Tests 30/30 re-run green on the new pin.
+- **`engines.dsh` re-pinned `0.2.1-rc.2` → `0.2.2-rc.1`** (package.json, package-lock.json): DSH 0.2.2 enforces the engines check even for dev-mount rows, so the exact pin must track the running host. README's no-auto-render config note re-checked against 0.2.2-rc.1 sources (still true). Tests 30/30 re-run green on the new pin.
 
 ### Fixed — 2026-11-09 (code-review follow-ups)
 
-- **snp tool face: output paths now come from the Python `[snp] wrote` lines**
-  instead of a local stem re-derivation. The old JS stem logic disagreed with
-  the Python suffix stripping (`_params_X` / `_extract_*`), so feeding a
-  params CSV back into `snp_read` silently returned `summary: null`
-  (regression-tested at the tool-face level).
-- **snp_extract exit 1 is a contract, not an error**: "unphysical, but the
-  JSON with summary/port_plan is still written" used to be swallowed by the
-  JS `execFile` rejection — the structured diagnosis never reached the model.
-  The tool now returns `ok: false` WITH `summary`/`port_plan` and only
-  rethrows when no JSON landed. Tool descriptions updated.
-- **numpy singular-matrix failures normalized**: `_inv` now converts
-  `numpy.linalg.LinAlgError` to `ZeroDivisionError` so both backends hit the
-  same drop-bad / SnpError paths (a bare LinAlgError used to escape as an
-  uncaught traceback — exit 1, no JSON, backends diverging on the same
-  input). Both snp `__main__` blocks also gained an unexpected-exception
-  guard that maps to exit 2, keeping the 0/1/2 contract intact.
-- **`write_params_csv` writes utf-8, not ascii**: the `# source=` header
-  embeds the input path, which is non-ASCII on a zh-CN Windows workspace —
-  the dump crashed with `UnicodeEncodeError` after succeeding.
-- **`PYTHONUTF8=1` forced for every spawned python** (`src/py.js`,
-  `src/projects.js`): Python < 3.15 encodes piped stdout by locale (cp936 on
-  zh-CN Windows) while the JS side decodes utf-8 — non-ASCII paths in tool
-  output came back as mojibake or crashed the writer.
+- **snp tool face: output paths now come from the Python `[snp] wrote` lines** instead of a local stem re-derivation. The old JS stem logic disagreed with the Python suffix stripping (`_params_X` / `_extract_*`), so feeding a params CSV back into `snp_read` silently returned `summary: null` (regression-tested at the tool-face level).
+- **snp_extract exit 1 is a contract, not an error**: "unphysical, but the JSON with summary/port_plan is still written" used to be swallowed by the JS `execFile` rejection — the structured diagnosis never reached the model. The tool now returns `ok: false` WITH `summary`/`port_plan` and only rethrows when no JSON landed. Tool descriptions updated.
+- **numpy singular-matrix failures normalized**: `_inv` now converts `numpy.linalg.LinAlgError` to `ZeroDivisionError` so both backends hit the same drop-bad / SnpError paths (a bare LinAlgError used to escape as an uncaught traceback — exit 1, no JSON, backends diverging on the same input). Both snp `__main__` blocks also gained an unexpected-exception guard that maps to exit 2, keeping the 0/1/2 contract intact.
+- **`write_params_csv` writes utf-8, not ascii**: the `# source=` header embeds the input path, which is non-ASCII on a zh-CN Windows workspace — the dump crashed with `UnicodeEncodeError` after succeeding.
+- **`PYTHONUTF8=1` forced for every spawned python** (`src/py.js`, `src/projects.js`): Python < 3.15 encodes piped stdout by locale (cp936 on zh-CN Windows) while the JS side decodes utf-8 — non-ASCII paths in tool output came back as mojibake or crashed the writer.
 - Docs: cluster-run references renamed to `batch_*` / `scheduler=direct`.
 
 ### Changed — 2026-11-09 (snp test consolidation)
 
-- **Topology scenarios parameterized in `tests/snp.test.mjs`** (32 → 27
-  cases, 27/27 green; no fixture or assertion changes): the three tl 4-port
-  cases fold into one (default pairing + scrambled auto-fix), the three
-  separate transformer topology cases fold into one matrix case (3-port
-  roles / 4-5-6-port taps / scrambled explicit remap) sharing an
-  `approxXfmr` triple assertion helper, and the three coupled_tl cases fold
-  into one (auto mapping / default grouping / theory-gate negative). Real-data
-  regressions, round trips and backend parity are untouched.
+- **Topology scenarios parameterized in `tests/snp.test.mjs`** (32 → 27 cases, 27/27 green; no fixture or assertion changes): the three tl 4-port cases fold into one (default pairing + scrambled auto-fix), the three separate transformer topology cases fold into one matrix case (3-port roles / 4-5-6-port taps / scrambled explicit remap) sharing an `approxXfmr` triple assertion helper, and the three coupled_tl cases fold into one (auto mapping / default grouping / theory-gate negative). Real-data regressions, round trips and backend parity are untouched.
 
 ### Removed — 2026-11-02 (ngspice channel)
 
-- **The ngspice tool family was removed** (user decision): `ngspice_assemble` /
-  `ngspice_run_sweep`, `scripts/ngspice/` (worker + checks), the ngspice-only
-  unit helper (`norm_length`, bare-number = um lengths) and its Config toggle
-  (the family switch set is now `spectre`/`snp`), and the ngspice parts of the
-  docs and tests. Tool surface 7 → 5. Reason: sky130 runs in Spectre after
-  model transcription; ngspice carried only simple demo value and was not worth
-  further development. The pre-removal state is preserved in this repo's
-  `ngspice` branch (cut at 4d4fe53).
+- **The ngspice tool family was removed** (user decision): `ngspice_assemble` / `ngspice_run_sweep`, `scripts/ngspice/` (worker + checks), the ngspice-only unit helper (`norm_length`, bare-number = um lengths) and its Config toggle (the family switch set is now `spectre`/`snp`), and the ngspice parts of the docs and tests. Tool surface 7 → 5. Reason: sky130 runs in Spectre after model transcription; ngspice carried only simple demo value and was not worth further development. The pre-removal state is preserved in this repo's `ngspice` branch (cut at 4d4fe53).
 
 ### Added — 2026-11-01 (family toggles)
 
-- **DSH-native on-demand registration**: `src/index.js` exports a schemastery
-  `Config` with `ngspice`/`spectre`/`snp` boolean switches (default `true`).
-  `apply(ctx, config)` registers only the enabled families; changing the config
-  in the DSH settings page hot-swaps the plugin (fiber restart re-registers).
-  Only an explicit `false` trims a family. Re-introduces a dependency:
-  `@deepseek-ai/schemastery` (see the Fixed entry below for the declaration
-  form; the official `tool-fs` plugin's read/write/edit booleans are the
-  pattern precedent).
+- **DSH-native on-demand registration**: `src/index.js` exports a schemastery `Config` with `ngspice`/`spectre`/`snp` boolean switches (default `true`). `apply(ctx, config)` registers only the enabled families; changing the config in the DSH settings page hot-swaps the plugin (fiber restart re-registers). Only an explicit `false` trims a family. Re-introduces a dependency: `@deepseek-ai/schemastery` (see the Fixed entry below for the declaration form; the official `tool-fs` plugin's read/write/edit booleans are the pattern precedent).
 
 ### Changed — 2026-11-01 (redistribution)
 
-- **Tool redistribution with the top-level plugin**: `bsub_submit` / `bsub_poll` /
-  `bsub_fetch` (generic remote LSF channel + the dsh-remote shell and LSF engine
-  behind them) and the simulator-agnostic `sim_collect` / `sim_progress` /
-  `sim_report` / `sim_trash` moved to `dsh-harnessams`. This package is now
-  simulator-only (7 tools: ngspice ×2, spectre ×3, snp ×2); its `scripts/` tree
-  (11 `.py` — the analysis scripts `common_collect_results` / `common_gen_sweep_report`
-  / `common_trash` and a `common_workspace.py` copy moved as well) remains the
-  worker source the top-level `bsub_submit` uploads via the workspace
-  `sim_scripts_dir`. Behavior is unchanged; only the owning package moved.
+- **Tool redistribution with the top-level plugin**: `bsub_submit` / `bsub_poll` / `bsub_fetch` (generic remote LSF channel + the dsh-remote shell and LSF engine behind them) and the simulator-agnostic `sim_collect` / `sim_progress` / `sim_report` / `sim_trash` moved to `dsh-harnessams`. This package is now simulator-only (7 tools: ngspice ×2, spectre ×3, snp ×2); its `scripts/` tree (11 `.py` — the analysis scripts `common_collect_results` / `common_gen_sweep_report` / `common_trash` and a `common_workspace.py` copy moved as well) remains the worker source the top-level `bsub_submit` uploads via the workspace `sim_scripts_dir`. Behavior is unchanged; only the owning package moved.
 
 ### Removed — 2026-11-01
 
-- **bestPoints feature deleted** (user decision): the `BestPoints` engine class,
-  the workers' `best_metric` config contract, `results.json.best_points`, and the
-  report's "Best point" section. The sweep data contract is now
-  `point_meta.json` / `sweep_progress.json` only; ranking/enrichment ideas from
-  the 2026-11-01 audit are deferred (none implemented as a replacement).
+- **bestPoints feature deleted** (user decision): the `BestPoints` engine class, the workers' `best_metric` config contract, `results.json.best_points`, and the report's "Best point" section. The sweep data contract is now `point_meta.json` / `sweep_progress.json` only; ranking/enrichment ideas from the 2026-11-01 audit are deferred (none implemented as a replacement).
 
 ### Fixed — 2026-11-01
 
-- **`@deepseek-ai/schemastery` moved from peer+dev to `dependencies`**:
-  installed bundles (`dsh plugin add` from a tarball/npm) do not get
-  devDependencies, and schemastery is not a host-provided peer, so a peer+dev
-  declaration would fail to resolve in installed form. Same placement as
-  `dsh-remote` (independent third-party library in `dependencies`). Verified
-  in installed form (`dsh plugin add` from the packed tarball into a
-  disposable profile): schemastery resolves inside the profile and the bundle
-  appears in the plugin manager with its detail page. The settings-page
-  switches themselves are not auto-generated by DSH 0.2.1-rc.2 — a bundle
-  must ship a browser half registering the `plugins.row.config` slot before
-  its config shows there; shipping one is deferred (user decision,
-  2026-11-01), so family toggles are edited through the profile config layer
-  until then.
+- **`@deepseek-ai/schemastery` moved from peer+dev to `dependencies`**: installed bundles (`dsh plugin add` from a tarball/npm) do not get devDependencies, and schemastery is not a host-provided peer, so a peer+dev declaration would fail to resolve in installed form. Same placement as `dsh-remote` (independent third-party library in `dependencies`). Verified in installed form (`dsh plugin add` from the packed tarball into a disposable profile): schemastery resolves inside the profile and the bundle appears in the plugin manager with its detail page. The settings-page switches themselves are not auto-generated by DSH 0.2.1-rc.2 — a bundle must ship a browser half registering the `plugins.row.config` slot before its config shows there; shipping one is deferred (user decision, 2026-11-01), so family toggles are edited through the profile config layer until then.
 
 ### Changed — 2026-10-31 (breaking)
 
-- **Three-channel refactor**: the plugin is now organised by simulator family
-  (`ngspice_*`, `spectre_*`) plus a generic LSF family (`bsub_*`), the S-parameter
-  tools (`snp_*`), and the simulator-agnostic shared tools (`sim_collect`,
-  `sim_progress`, `sim_report`, `sim_trash`). Tool count 8 → 14.
-- **Breaking renames, no aliases** (0.1.0 was never published):
-  `sim_assemble` → `ngspice_assemble`, `sim_run_sweep` → `ngspice_run_sweep`.
-  `sim_collect` / `sim_progress` / `sim_report` / `sim_trash` keep their names and
-  arguments.
-- Script layout is now `scripts/{common,ngspice,spectre,snp}/` with a family prefix
-  on every filename (`common_*`, `ngspice_*`, `spectre_*`, `snp_*`); shared batch
-  mechanics moved to `common_sweep_engine.py`, unit/bias helpers to
-  `common_units.py`, and workspace discovery to `common_workspace.py`.
-- The unused `@deepseek-ai/dsh-tools` peer/dev dependency was removed: tool
-  definitions are built by the local schema compiler.
+- **Three-channel refactor**: the plugin is now organised by simulator family (`ngspice_*`, `spectre_*`) plus a generic LSF family (`bsub_*`), the S-parameter tools (`snp_*`), and the simulator-agnostic shared tools (`sim_collect`, `sim_progress`, `sim_report`, `sim_trash`). Tool count 8 → 14.
+- **Breaking renames, no aliases** (0.1.0 was never published): `sim_assemble` → `ngspice_assemble`, `sim_run_sweep` → `ngspice_run_sweep`. `sim_collect` / `sim_progress` / `sim_report` / `sim_trash` keep their names and arguments.
+- Script layout is now `scripts/{common,ngspice,spectre,snp}/` with a family prefix on every filename (`common_*`, `ngspice_*`, `spectre_*`, `snp_*`); shared batch mechanics moved to `common_sweep_engine.py`, unit/bias helpers to `common_units.py`, and workspace discovery to `common_workspace.py`.
+- The unused `@deepseek-ai/dsh-tools` peer/dev dependency was removed: tool definitions are built by the local schema compiler.
 
 ### Added — 2026-10-31
 
-- **Spectre local channel**: `spectre_assemble`, `spectre_run_sweep`,
-  `spectre_parse`. The worker ports the AsymATT batch mechanics (psfascii,
-  `@@PARAM@@`, per-point `point_meta.json`, smart license/output timeout
-  extensions, progress/best points, `.simulator` marker) and ships
-  `spectre_psf_parse.py` (PSF ASCII swept/delta/complex plus non-swept `*.info`
-  scalars) and `spectre_checks.py` (`.scs` format, placeholder/parameter
-  consistency, include existence, geometry unit-suffix rule).
-- **Generic remote LSF channel**: `bsub_submit`, `bsub_poll`, `bsub_fetch` —
-  simulator-agnostic. They consume only dsh-remote's `rw_machines`/`rw_exec`/
-  `rw_upload`/`rw_download` (a real live session in the machine's mirror is
-  borrowed), upload the plugin scripts plus the run directory, submit a worker
-  through `bsub`, poll `bjobs` + point metas + `sweep_progress.json`, and fetch a
-  tar archive back into the local run directory. The Spectre workflow is only a
-  worker choice; plugin scripts upload with their relative layout and the
-  template is always named `template.scs`. `bsub_submit` also accepts
-  `scheduler="none"` for a node-local foreground run (no `bsub`; the same worker
-  runs on the login host and `bsub_poll` reads the progress files).
-- Shared `sim_collect` now records `results.json.simulator` (from the run's
-  `.simulator` marker, or the template extension) and `sim_report` shows it in the
-  report header; `sim_progress` returns it too.
+- **Spectre local channel**: `spectre_assemble`, `spectre_run_sweep`, `spectre_parse`. The worker ports the AsymATT batch mechanics (psfascii, `@@PARAM@@`, per-point `point_meta.json`, smart license/output timeout extensions, progress/best points, `.simulator` marker) and ships `spectre_psf_parse.py` (PSF ASCII swept/delta/complex plus non-swept `*.info` scalars) and `spectre_checks.py` (`.scs` format, placeholder/parameter consistency, include existence, geometry unit-suffix rule).
+- **Generic remote LSF channel**: `bsub_submit`, `bsub_poll`, `bsub_fetch` — simulator-agnostic. They consume only dsh-remote's `rw_machines`/`rw_exec`/ `rw_upload`/`rw_download` (a real live session in the machine's mirror is borrowed), upload the plugin scripts plus the run directory, submit a worker through `bsub`, poll `bjobs` + point metas + `sweep_progress.json`, and fetch a tar archive back into the local run directory. The Spectre workflow is only a worker choice; plugin scripts upload with their relative layout and the template is always named `template.scs`. `bsub_submit` also accepts `scheduler="none"` for a node-local foreground run (no `bsub`; the same worker runs on the login host and `bsub_poll` reads the progress files).
+- Shared `sim_collect` now records `results.json.simulator` (from the run's `.simulator` marker, or the template extension) and `sim_report` shows it in the report header; `sim_progress` returns it too.
 
 ### Fixed — 2026-10-31
 
-- **Invalid tool schemas (`type: null`)**: parameters carrying `required: false`
-  are rejected by the first-party schema rules, and dev-mount could not resolve
-  `@deepseek-ai/dsh-tools`; the local compiler now always emits an object-rooted
-  JSON Schema and validates required/type/enum before execution.
-- **Borrowed-session agent context**: `sessionInMirror` returned
-  `{ agent: { session } }`, which the tool pipeline handed over as
-  `exec.agent.session === undefined` (every `rw_*` call failed with
-  `Cannot read properties of undefined (reading 'id')`). It now returns
-  `{ id, session }`; `execRemote` also passes `promoteOnTimeout: false` so a
-  remote command never needs the borrowed session's job controller.
+- **Invalid tool schemas (`type: null`)**: parameters carrying `required: false` are rejected by the first-party schema rules, and dev-mount could not resolve `@deepseek-ai/dsh-tools`; the local compiler now always emits an object-rooted JSON Schema and validates required/type/enum before execution.
+- **Borrowed-session agent context**: `sessionInMirror` returned `{ agent: { session } }`, which the tool pipeline handed over as `exec.agent.session === undefined` (every `rw_*` call failed with `Cannot read properties of undefined (reading 'id')`). It now returns `{ id, session }`; `execRemote` also passes `promoteOnTimeout: false` so a remote command never needs the borrowed session's job controller.
 - JSON reads (configs, point metas, reports) tolerate a UTF-8 BOM.
 - `.compute_node` records the actual host name (previously always `local`).
 
 ### Added — 2026-10-30
 
-- S-parameter local reading and computation (2026-10-30, tools-only by design — no UI);
-  tool surface grows from six to eight:
+- S-parameter local reading and computation (2026-10-30, tools-only by design — no UI); tool surface grows from six to eight:
   - `snp_read` — parse Touchstone v1 (.s1p..sNp) / Spectre psfascii sp.sp (S/Y/Z
     paramtype) / snp_read params CSV (round-trippable); dump per-frequency S/Z/Y
     curve CSV with a metadata header, plus header info, band stats, reciprocity
@@ -207,9 +99,7 @@ First release (stage 1 scope; not yet published to npm).
 
 ### Added
 
-- DSH plugin entry `dsh-harnessams-smart-ana-sim` (row id `harnessams-smart-ana-sim`) exposing
-  six tools: `sim_assemble`, `sim_run_sweep`, `sim_collect`, `sim_progress`, `sim_report`,
-  `sim_trash`. Source under `src/` (plain JS, no build chain).
+- DSH plugin entry `dsh-harnessams-smart-ana-sim` (row id `harnessams-smart-ana-sim`) exposing six tools: `sim_assemble`, `sim_run_sweep`, `sim_collect`, `sim_progress`, `sim_report`, `sim_trash`. Source under `src/` (plain JS, no build chain).
 - Plain-Python pipeline shipped under `scripts/` (no build step, system Python only):
   - `sweep_worker_ngspice.py` — local ngspice batch sweep skeleton: `@@PARAM@@` templating,
     per-point directories with atomic `point_meta.json`, `sweep_progress.json` (30 s cadence),
@@ -219,18 +109,6 @@ First release (stage 1 scope; not yet published to npm).
   - `gen_sweep_report.py` — self-contained interactive HTML report (Plotly, four sections,
     round selector); workspace-level shared Plotly (see below).
   - `trash.py` — safety-by-default trash (list / restore / purge).
-- Plotly delivery, single workspace-level copy: the generator seeds
-  `<workspace_root>/assets/plotly.min.js` from an explicit `--plotly` path, four
-  ancestor-probed candidates (`assets/`, `src/assets/`,
-  `node_modules/dsh-harnessams/assets/`, `dsh-harnessams/assets/`), or the workspace
-  `harnessams.json` `plotly_asset` field (refreshing on size mismatch), and every
-  report references it with a workspace-relative `src`; the CDN is the fallback
-  (`--plotly-cdn` forces it). The master copy lives inside the `dsh-harnessams` package
-  in the top-level HarnessAMS repo (`src/assets/plotly.min.js`) and ships with its
-  tarball — this package intentionally ships none. Decision record: top-level repo
-  `docs/decisions.md` (D-001).
-- Workspace convention: `harnessams.json` is discovered by walking upward (bare form, or
-  inside `harnessams-workspace/`); relative path fields resolve against the config file's
-  directory; `trash_dir` is honored when present.
-- Starter tests under `tests/` (`node --test` from the repo root): plugin metadata + tool registration
-  via mock ctx, plus a compile smoke over the pipeline scripts.
+- Plotly delivery, single workspace-level copy: the generator seeds `<workspace_root>/assets/plotly.min.js` from an explicit `--plotly` path, four ancestor-probed candidates (`assets/`, `src/assets/`, `node_modules/dsh-harnessams/assets/`, `dsh-harnessams/assets/`), or the workspace `harnessams.json` `plotly_asset` field (refreshing on size mismatch), and every report references it with a workspace-relative `src`; the CDN is the fallback (`--plotly-cdn` forces it). The master copy lives inside the `dsh-harnessams` package in the top-level HarnessAMS repo (`src/assets/plotly.min.js`) and ships with its tarball — this package intentionally ships none. Decision record: top-level repo `docs/decisions.md` (D-001).
+- Workspace convention: `harnessams.json` is discovered by walking upward (bare form, or inside `harnessams-workspace/`); relative path fields resolve against the config file's directory; `trash_dir` is honored when present.
+- Starter tests under `tests/` (`node --test` from the repo root): plugin metadata + tool registration via mock ctx, plus a compile smoke over the pipeline scripts.

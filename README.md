@@ -1,16 +1,8 @@
 # HarnessAMS-SmartAnaSim
 
-> Simulator plugin: Spectre channel (code-driven netlist assembly with
-> hard PDK isolation) and S-parameter reading/extraction. Simulator-specific code
-> only — the generic remote LSF channel (`batch_*`, renamed from `bsub_*` on
-> 2026-11-09) and the sweep-result analysis tools (`sim_*`, HTML reports) live in
-> the top-level `HarnessAMS` plugin.
-> npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install
-> paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
+> Simulator plugin: Spectre channel (code-driven netlist assembly with hard PDK isolation) and S-parameter reading/extraction. Simulator-specific code only — the generic remote LSF channel (`batch_*`, renamed from `bsub_*` on 2026-11-09) and the sweep-result analysis tools (`sim_*`, HTML reports) live in the top-level `HarnessAMS` plugin. npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
 >
-> The former ngspice channel was removed on 2026-11-02 (sky130 runs in Spectre
-> after model transcription; ngspice carried only demo value) — restore it from
-> this repo's `ngspice` branch.
+> The former ngspice channel was removed on 2026-11-02 (sky130 runs in Spectre after model transcription; ngspice carried only demo value) — restore it from this repo's `ngspice` branch.
 
 ## Tool surface (5)
 
@@ -19,22 +11,13 @@
 | Spectre | `spectre_assemble`, `spectre_run_sweep`, `spectre_parse` | the host executing this plugin (local Spectre) |
 | S-parameter | `snp_read`, `snp_extract` | local (tools only, no UI) |
 
-A cluster run reaches these workers through the **top-level plugin's** generic
-`batch_*` tools: pick the `spectre/spectre_sweep_worker.py` worker (resolved under
-the workspace `sim_scripts_dir`, which points at this package's `scripts/` tree)
-and pass its arguments. Nothing here mentions Spectre from the batch side, and
-the Spectre tools never touch the network.
+A cluster run reaches these workers through the **top-level plugin's** generic `batch_*` tools: pick the `spectre/spectre_sweep_worker.py` worker (resolved under the workspace `sim_scripts_dir`, which points at this package's `scripts/` tree) and pass its arguments. Nothing here mentions Spectre from the batch side, and the Spectre tools never touch the network.
 
 ## Why the split
 
-- `assemble` is simulator-specific: it writes `.scs` and checks
-  `simulator lang=spectre`, placeholders, include paths and the unit-suffix rule
-  (a bare geometry number means metres in Spectre).
-- `run_sweep` is simulator-specific: a local Spectre process with psfascii
-  output and smart timeouts (license wait / output-progress extensions).
-- The generic batch channel and the data-contract analysis operations
-  (collect / progress / report / trash) are **not** simulator details — they
-  moved to the top-level `dsh-harnessams` plugin (2026-11-01 redistribution).
+- `assemble` is simulator-specific: it writes `.scs` and checks `simulator lang=spectre`, placeholders, include paths and the unit-suffix rule (a bare geometry number means metres in Spectre).
+- `run_sweep` is simulator-specific: a local Spectre process with psfascii output and smart timeouts (license wait / output-progress extensions).
+- The generic batch channel and the data-contract analysis operations (collect / progress / report / trash) are **not** simulator details — they moved to the top-level `dsh-harnessams` plugin (2026-11-01 redistribution).
 
 ## Repository layout
 
@@ -54,15 +37,11 @@ assets/numfallback.py      pure-stdlib numeric fallback for the snp_* scripts
 tests/                     node:test suite + Python worker/PSF self-tests + fixtures
 ```
 
-Every script filename carries its family prefix; scripts are plain files spawned
-by the Node channel (no build step, system Python only). Cross-directory imports
-add `scripts/` to `sys.path` and use `from common.… import …`.
+Every script filename carries its family prefix; scripts are plain files spawned by the Node channel (no build step, system Python only). Cross-directory imports add `scripts/` to `sys.path` and use `from common.… import …`.
 
 ## Workspace convention
 
-A `harnessams.json` is discovered by walking upward (bare form, or inside
-`harnessams-workspace/`). Relative values resolve against the config file's
-directory. Recognized fields:
+A `harnessams.json` is discovered by walking upward (bare form, or inside `harnessams-workspace/`). Relative values resolve against the config file's directory. Recognized fields:
 
 | Field | Used by |
 |---|---|
@@ -72,18 +51,9 @@ directory. Recognized fields:
 
 ## Tool family toggles
 
-Each simulator family registers only when its DSH plugin-config switch is not
-explicitly `false` (all default `true` — the full 5-tool surface). Change the
-config and cordis hot-swaps the plugin: the fiber restarts and the new
-selection registers immediately, no reboot.
+Each simulator family registers only when its DSH plugin-config switch is not explicitly `false` (all default `true` — the full 5-tool surface). Change the config and cordis hot-swaps the plugin: the fiber restarts and the new selection registers immediately, no reboot.
 
-> DSH (verified on 0.2.1-rc.2; 0.2.2-rc.1 source-checked 2026-11-10 — the plugin
-> manager still ships no client-side auto-render) does not auto-render a bundle's
-> config: switches appear in the plugin manager only when the bundle ships a
-> browser half registering the `plugins.row.config` slot (key `<package>#<row id>`).
-> This package ships no browser half yet (deferred 2026-11-01), so edit the
-> booleans through the profile config layer; the `Config` export still drives
-> defaults and the hot-swap server-side.
+> DSH (verified on 0.2.1-rc.2; 0.2.2-rc.1 source-checked 2026-11-10 — the plugin manager still ships no client-side auto-render) does not auto-render a bundle's config: switches appear in the plugin manager only when the bundle ships a browser half registering the `plugins.row.config` slot (key `<package>#<row id>`). This package ships no browser half yet (deferred 2026-11-01), so edit the booleans through the profile config layer; the `Config` export still drives defaults and the hot-swap server-side.
 
 ```json
 {
@@ -92,16 +62,11 @@ selection registers immediately, no reboot.
 }
 ```
 
-The schema is `@deepseek-ai/schemastery` (a runtime `dependencies` entry, like
-`dsh-remote` — installed bundles do not get devDependencies; the official
-`tool-fs` plugin uses the same per-tool boolean-config pattern).
+The schema is `@deepseek-ai/schemastery` (a runtime `dependencies` entry, like `dsh-remote` — installed bundles do not get devDependencies; the official `tool-fs` plugin uses the same per-tool boolean-config pattern).
 
 ## Spectre channel
 
-`spectre_run_sweep` is a *local* channel: it runs on the host executing the
-plugin. Use it when DSH runs on a simulation host; otherwise submit the same
-worker through the batch tools. The tool's overall timeout defaults to 1200 s
-(`timeout_sec` overrides it; per-point limits live in the sweep config).
+`spectre_run_sweep` is a *local* channel: it runs on the host executing the plugin. Use it when DSH runs on a simulation host; otherwise submit the same worker through the batch tools. The tool's overall timeout defaults to 1200 s (`timeout_sec` overrides it; per-point limits live in the sweep config).
 
 Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
 
@@ -122,33 +87,17 @@ Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
 }
 ```
 
-- Each point writes `NN/netlist.scs`, `NN/netlist.scs.raw/` (psfascii),
-  `NN/spectre.out` and `NN/point_meta.json`.
-- Command defaults after token-exact dedup: `+lqtimeout 900`, `-maxw 5`,
-  `-maxn 5`, `++aps` (not `+preset aps`, which triggers SPECTRE-132), `+mt`,
-  `+logstatus`.
-- Smart timeout: before killing, a `Waiting for available license` log line
-  extends the deadline once, and files already in the raw directory extend it
-  once (simulation in progress).
-- `output_format` must stay `psfascii` for `spectre_parse` and for the snp_* S-
-  parameter reader.
-- `spectre_parse` turns raw PSF ASCII (`ac.ac`, `dc*.dc`, `tran*.tran`,
-  `*.info`) into per-point JSON with Re/Im pairs plus an index; optional long
-  CSV curves.
+- Each point writes `NN/netlist.scs`, `NN/netlist.scs.raw/` (psfascii), `NN/spectre.out` and `NN/point_meta.json`.
+- Command defaults after token-exact dedup: `+lqtimeout 900`, `-maxw 5`, `-maxn 5`, `++aps` (not `+preset aps`, which triggers SPECTRE-132), `+mt`, `+logstatus`.
+- Smart timeout: before killing, a `Waiting for available license` log line extends the deadline once, and files already in the raw directory extend it once (simulation in progress).
+- `output_format` must stay `psfascii` for `spectre_parse` and for the snp_* S-parameter reader.
+- `spectre_parse` turns raw PSF ASCII (`ac.ac`, `dc*.dc`, `tran*.tran`, `*.info`) into per-point JSON with Re/Im pairs plus an index; optional long CSV curves.
 
-`spectre_checks.py` is the assembly-layer library for a project's gen script:
-`simulator lang=spectre`, forbidden SPICE directives, subckt/ends pairing,
-`@@PARAM@@` vs sweep parameters, the `template.scs` naming warning, relative
-include existence, and the u/n-suffix geometry rule.
+`spectre_checks.py` is the assembly-layer library for a project's gen script: `simulator lang=spectre`, forbidden SPICE directives, subckt/ends pairing, `@@PARAM@@` vs sweep parameters, the `template.scs` naming warning, relative include existence, and the u/n-suffix geometry rule.
 
 ## Cluster runs (through the top-level plugin)
 
-The generic remote batch channel (`batch_submit` / `batch_poll` / `batch_fetch`,
-renamed from `bsub_*` on 2026-11-09) and the sweep-result analysis tools
-(`sim_analysis` / `sim_progress` / `safe_trash`) moved to the top-level
-`dsh-harnessams` plugin on 2026-11-01. Typical remote Spectre round (see the
-HarnessAMS repo for the full channel contract — mirrors, live-session borrowing,
-the remote write fence and cluster gotchas):
+The generic remote batch channel (`batch_submit` / `batch_poll` / `batch_fetch`, renamed from `bsub_*` on 2026-11-09) and the sweep-result analysis tools (`sim_analysis` / `sim_progress` / `safe_trash`) moved to the top-level `dsh-harnessams` plugin on 2026-11-01. Typical remote Spectre round (see the HarnessAMS repo for the full channel contract — mirrors, live-session borrowing, the remote write fence and cluster gotchas):
 
 ```
 batch_submit(run_dir="<proj>/sweep/Round1/top", machine_id="node1",
@@ -161,19 +110,13 @@ batch_fetch(run_dir="...", includes=["point_meta.json",
              "*/netlist.scs.raw/sp.sp", "sweep_progress.json"])
 ```
 
-The uploaded worker tree is this package's `scripts/` directory (the workspace
-`sim_scripts_dir`), so remote workers resolve `from common.common_sweep_engine
-import …` exactly like local ones.
+The uploaded worker tree is this package's `scripts/` directory (the workspace `sim_scripts_dir`), so remote workers resolve `from common.common_sweep_engine import …` exactly like local ones.
 
 ## S-parameter reading and extraction (snp_read / snp_extract)
 
-Inputs auto-detected: Touchstone v1 (`.s1p` .. `.sNp`), Spectre psfascii
-`sp.sp` (S/Y/Z paramtype), or a params CSV previously written by `snp_read`
-(lossless round trip). All math runs on Z-parameters (per-port reference
-impedances honored).
+Inputs auto-detected: Touchstone v1 (`.s1p` .. `.sNp`), Spectre psfascii `sp.sp` (S/Y/Z paramtype), or a params CSV previously written by `snp_read` (lossless round trip). All math runs on Z-parameters (per-port reference impedances honored).
 
-- `snp_read`: header info, band stats, reciprocity diagnostic, per-frequency
-  S/Z/Y curve CSV.
+- `snp_read`: header info, band stats, reciprocity diagnostic, per-frequency S/Z/Y curve CSV.
 - `snp_extract` by `--type`:
   - **transformer** (2/3/4/5/6 ports): L1/L2, Q1/Q2, k, two SRFs, Gmax.
   - **inductor** (1/2/3 ports): L, Q, SRF.
@@ -183,59 +126,28 @@ impedances honored).
     Z0e/Z0o/theta/k and a `theory_ok` flag (gate default 5.0e-2, calibrated at 4x
     a validated reference coupler; override with `--theory-gate`).
 
-**Port model / mapping.** `coil`/`coil1`/`coil2` list a side's ports (one port =
-single-ended side, two = differential) and remap roles; `ct`/`ct1`/`ct2` name the
-center-tap port; `--se` grounds ports during extraction (V=0, Schur). Missing or
-unphysical mappings are auto-adjusted against physicality checks (L>0, |k|<=1,
+**Port model / mapping.** `coil`/`coil1`/`coil2` list a side's ports (one port = single-ended side, two = differential) and remap roles; `ct`/`ct1`/`ct2` name the center-tap port; `--se` grounds ports during extraction (V=0, Schur). Missing or unphysical mappings are auto-adjusted against physicality checks (L>0, |k|<=1,
 Re(Z0) resistive-dominant, theta increasing, theta_e ~= theta_o) and the result
 echoes a `port_plan` to confirm.
 
-**Numeric backend.** numpy is the primary path; when missing, the bundled
-`assets/numfallback.py` pure-stdlib backend takes over automatically
-(`SNP_FORCE_FALLBACK=1` forces it; the two backends must agree, test-asserted).
+**Numeric backend.** numpy is the primary path; when missing, the bundled `assets/numfallback.py` pure-stdlib backend takes over automatically (`SNP_FORCE_FALLBACK=1` forces it; the two backends must agree, test-asserted).
 
 ## Reports
 
-`sim_report(project_dir)` renders `sweep/Round*/top/results.json` into
-`Analysis/<project>_report.html`: summary cards, interactive Plotly metric
-charts, per-point table. Plotly comes from a single workspace-level
-copy (`<workspace_root>/assets/plotly.min.js`, seeded on demand from an ancestor
-`assets/` / `src/assets/` / an installed `dsh-harnessams` package, or the
-workspace `plotly_asset` field); the CDN is the fallback. The Simulator header
-label comes from `results.json.simulator` (written by `sim_collect`). S-parameter
-curve dashboards are not part of this round: use `spectre_parse` + `snp_*` for
-RF analysis.
+`sim_report(project_dir)` renders `sweep/Round*/top/results.json` into `Analysis/<project>_report.html`: summary cards, interactive Plotly metric charts, per-point table. Plotly comes from a single workspace-level copy (`<workspace_root>/assets/plotly.min.js`, seeded on demand from an ancestor `assets/` / `src/assets/` / an installed `dsh-harnessams` package, or the workspace `plotly_asset` field); the CDN is the fallback. The Simulator header label comes from `results.json.simulator` (written by `sim_collect`). S-parameter curve dashboards are not part of this round: use `spectre_parse` + `snp_*` for RF analysis.
 
 ## Reports
 
-Sweep-result HTML reports are generated by the top-level plugin's `sim_report`
-tool (from `sweep/Round*/top/results.json`); the report generator script moved
-with it. S-parameter curve dashboards are not part of this round: use
-`spectre_parse` + `snp_*` for RF analysis.
+Sweep-result HTML reports are generated by the top-level plugin's `sim_report` tool (from `sweep/Round*/top/results.json`); the report generator script moved with it. S-parameter curve dashboards are not part of this round: use `spectre_parse` + `snp_*` for RF analysis.
 
 ## Validation
 
-- `node --test` from the repo root (tool schema/registration, script parsing +
-  naming, PSF parsing, Spectre worker statuses with a fake process layer,
-  and the S-parameter regression suite; the batch-channel and
-  report-injection tests moved to the HarnessAMS repo with the tools).
-- node1 Spectre dual-mode acceptance through the plugin tools, no direct shell or
-  Python (2026-10-31, Broadband4 Round1 template, 2 states at 65 C):
-  `bsub_submit(scheduler="none")` ran on node1 (`compute_node=node1`, record
-  `direct-1793437388485`) and `bsub_submit(scheduler="lsf")` became Job
-  **15929901** on node5; both returned 2/2 success. `bsub_fetch` recovered both
-  point metas and both `sp.sp` files (5135 lines each); the only difference in
-  each pair is the PSF header `date`. `snp_read` on both files gives identical
-  band/port/max|S|/reciprocity values, and the 1564 numeric CSV rows per point
-  are identical. An earlier ssh-only acceptance used Job 15924601; it remains
-  reproducible with `tests/manual/compare_spectre_runs.py <run-a> <run-b>`.
+- `node --test` from the repo root (tool schema/registration, script parsing + naming, PSF parsing, Spectre worker statuses with a fake process layer, and the S-parameter regression suite; the batch-channel and report-injection tests moved to the HarnessAMS repo with the tools).
+- node1 Spectre dual-mode acceptance through the plugin tools, no direct shell or Python (2026-10-31, Broadband4 Round1 template, 2 states at 65 C): `bsub_submit(scheduler="none")` ran on node1 (`compute_node=node1`, record `direct-1793437388485`) and `bsub_submit(scheduler="lsf")` became Job **15929901** on node5; both returned 2/2 success. `bsub_fetch` recovered both point metas and both `sp.sp` files (5135 lines each); the only difference in each pair is the PSF header `date`. `snp_read` on both files gives identical band/port/max|S|/reciprocity values, and the 1564 numeric CSV rows per point are identical. An earlier ssh-only acceptance used Job 15924601; it remains reproducible with `tests/manual/compare_spectre_runs.py <run-a> <run-b>`.
 
 ## What the package ships
 
-`src/`, `scripts/{common,spectre,snp}` (9 `.py`), `assets/numfallback.py`,
-`cordis.patch.yml`, plus npm auto-included `package.json`, `README.md`, `LICENSE`.
-Deliberately not shipped: `tests/` (including `tests/data/` and the manual
-comparison helper) and any Plotly copy. `PUBLISH.md` holds the tarball checks.
+`src/`, `scripts/{common,spectre,snp}` (9 `.py`), `assets/numfallback.py`, `cordis.patch.yml`, plus npm auto-included `package.json`, `README.md`, `LICENSE`. Deliberately not shipped: `tests/` (including `tests/data/` and the manual comparison helper) and any Plotly copy. `PUBLISH.md` holds the tarball checks.
 
 ## License
 

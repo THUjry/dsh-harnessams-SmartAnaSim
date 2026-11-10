@@ -1,7 +1,6 @@
 # Publishing dsh-harnessams-smart-ana-sim
 
-Checklist for publishing this package to npm. The repository root **is** the package;
-run everything from here.
+Checklist for publishing this package to npm. The repository root **is** the package; run everything from here.
 
 1. Version and records
    - Bump `version` in `package.json` (semver; the current line is 0.1.0).

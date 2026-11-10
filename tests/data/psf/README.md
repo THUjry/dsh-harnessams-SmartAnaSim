@@ -1,5 +1,4 @@
-This directory holds small hand-written Spectre psfascii (PSF ASCII) fixtures used
-by tests/psf_parse_test.py and tests/spectre_worker_test.py.
+This directory holds small hand-written Spectre psfascii (PSF ASCII) fixtures used by tests/psf_parse_test.py and tests/spectre_worker_test.py.
 
 point_ac/netlist.scs.raw/
   ac.ac      swept AC data: complex VOUT, three frequency points, and a delta-
