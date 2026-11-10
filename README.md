@@ -77,12 +77,13 @@ explicitly `false` (all default `true` — the full 5-tool surface). Change the
 config and cordis hot-swaps the plugin: the fiber restarts and the new
 selection registers immediately, no reboot.
 
-> DSH 0.2.1-rc.2 does not auto-render a bundle's config: switches appear in
-> the plugin manager only when the bundle ships a browser half registering the
-> `plugins.row.config` slot (key `<package>#<row id>`). This package ships no
-> browser half yet (deferred 2026-11-01), so edit the booleans through the
-> profile config layer; the `Config` export still drives defaults and the
-> hot-swap server-side.
+> DSH (verified on 0.2.1-rc.2; 0.2.2-rc.1 source-checked 2026-11-10 — the plugin
+> manager still ships no client-side auto-render) does not auto-render a bundle's
+> config: switches appear in the plugin manager only when the bundle ships a
+> browser half registering the `plugins.row.config` slot (key `<package>#<row id>`).
+> This package ships no browser half yet (deferred 2026-11-01), so edit the
+> booleans through the profile config layer; the `Config` export still drives
+> defaults and the hot-swap server-side.
 
 ```json
 {
