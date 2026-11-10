@@ -25,3 +25,8 @@ test('spectre: sweep worker statuses, smart timeout, markers and progress', asyn
   const stdout = await runPy('tests/spectre_worker_test.py')
   assert.match(stdout, /spectre worker tests ok/)
 })
+
+test('spectre: assembly checks — ideal RCL ranges and geometry suffix rules', async () => {
+  const stdout = await runPy('tests/spectre_checks_test.py')
+  assert.match(stdout, /spectre checks tests ok/)
+})

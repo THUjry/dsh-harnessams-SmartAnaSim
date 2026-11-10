@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added — 2026-11-10 (ideal RCL range check)
+
+- **`spectre_checks.py` gates ideal resistor/capacitor/inductor values** in `check_netlist_format`: R 0.1 ohm..1M ohm, C 1f..1u farad, L 0.1p..10n henry (inclusive; `rcl_ranges` kwarg overrides). Literals, `@@P@@` swept values and template `parameters` references are all checked; `m`/`M` follow Spectre case sensitivity (m=1e-3, M=1e6); a bare number is the base unit (no metres trap for ideal devices). The check is device-aware — geometry `l`/`w` attrs on non-RCL devices keep the u/n contract, and an ideal inductor's `l=` no longer trips the metres warning. Fixed a latent crash on the way: the geometry placeholder error message used a `%@@` format spec (invalid `%@`), so the branch died with `ValueError` whenever it fired (the library had no test coverage before this). New `tests/spectre_checks_test.py` (10 scenarios) wired into `spectre.test.mjs`; suite 30 → 31, all green.
+
 ### Changed — 2026-11-10 (sweep timeout default)
 
 - **`spectre_run_sweep` overall timeout default `1800` → `1200`** (tool parameter description and the execute fallback): aligns the local channel with the remote direct budget instead of exceeding it. `timeout_sec` still overrides; per-point limits are unchanged (sweep config). README's Spectre channel section states the default. Tests 30/30 re-run green.

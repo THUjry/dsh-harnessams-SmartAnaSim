@@ -15,7 +15,7 @@ A cluster run reaches these workers through the **top-level plugin's** generic `
 
 ## Why the split
 
-- `assemble` is simulator-specific: it writes `.scs` and checks `simulator lang=spectre`, placeholders, include paths and the unit-suffix rule (a bare geometry number means metres in Spectre).
+- `assemble` is simulator-specific: it writes `.scs` and checks `simulator lang=spectre`, placeholders, include paths, the unit-suffix rule (a bare geometry number means metres in Spectre) and ideal R/C/L value ranges.
 - `run_sweep` is simulator-specific: a local Spectre process with psfascii output and smart timeouts (license wait / output-progress extensions).
 - The generic batch channel and the data-contract analysis operations (collect / progress / report / trash) are **not** simulator details — they moved to the top-level `dsh-harnessams` plugin (2026-11-01 redistribution).
 
@@ -93,7 +93,7 @@ Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
 - `output_format` must stay `psfascii` for `spectre_parse` and for the snp_* S-parameter reader.
 - `spectre_parse` turns raw PSF ASCII (`ac.ac`, `dc*.dc`, `tran*.tran`, `*.info`) into per-point JSON with Re/Im pairs plus an index; optional long CSV curves.
 
-`spectre_checks.py` is the assembly-layer library for a project's gen script: `simulator lang=spectre`, forbidden SPICE directives, subckt/ends pairing, `@@PARAM@@` vs sweep parameters, the `template.scs` naming warning, relative include existence, and the u/n-suffix geometry rule.
+`spectre_checks.py` is the assembly-layer library for a project's gen script: `simulator lang=spectre`, forbidden SPICE directives, subckt/ends pairing, `@@PARAM@@` vs sweep parameters, the `template.scs` naming warning, relative include existence, the u/n-suffix geometry rule, and the ideal R/C/L value-range gate (R 0.1..1M ohm, C 1f..1u farad, L 0.1p..10n henry).
 
 ## Cluster runs (through the top-level plugin)
 
