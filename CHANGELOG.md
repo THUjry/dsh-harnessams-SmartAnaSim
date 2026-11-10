@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — 2026-11-10 (sweep timeout default)
+
+- **`spectre_run_sweep` overall timeout default `1800` → `1200`** (tool
+  parameter description and the execute fallback): aligns the local channel
+  with the remote direct budget instead of exceeding it. `timeout_sec` still
+  overrides; per-point limits are unchanged (sweep config). README's Spectre
+  channel section states the default. Tests 30/30 re-run green.
+
 ### Changed — 2026-11-10 (host upgrade re-pin)
 
 - **`engines.dsh` re-pinned `0.2.1-rc.2` → `0.2.2-rc.1`** (package.json,

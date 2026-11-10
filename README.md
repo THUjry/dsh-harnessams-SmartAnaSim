@@ -100,7 +100,8 @@ The schema is `@deepseek-ai/schemastery` (a runtime `dependencies` entry, like
 
 `spectre_run_sweep` is a *local* channel: it runs on the host executing the
 plugin. Use it when DSH runs on a simulation host; otherwise submit the same
-worker through the batch tools.
+worker through the batch tools. The tool's overall timeout defaults to 1200 s
+(`timeout_sec` overrides it; per-point limits live in the sweep config).
 
 Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
 

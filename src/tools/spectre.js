@@ -35,7 +35,7 @@ export function spectreTools() {
       parameters: {
         run_dir: { type: 'string', required: true, description: 'Run directory holding template.scs and sweep_config.json' },
         max_parallel: { type: 'number', description: 'Concurrency (default: config max_parallel)' },
-        timeout_sec: { type: 'number', description: 'Overall tool timeout in seconds (default 1800)' },
+        timeout_sec: { type: 'number', description: 'Overall tool timeout in seconds (default 1200)' },
         spectre_cmd: { type: 'string', description: 'Spectre executable override (default: sweep_config/workspace/PATH)' },
       },
       async execute(args) {
@@ -44,7 +44,7 @@ export function spectreTools() {
         if (args.max_parallel) argv.push('--max-parallel', String(args.max_parallel))
         if (args.spectre_cmd) argv.push('--spectre-cmd', String(args.spectre_cmd))
         const { stdout } = await runPython('spectre/spectre_sweep_worker.py', argv,
-          (args.timeout_sec ?? 1800) * 1000)
+          (args.timeout_sec ?? 1200) * 1000)
           .catch((e) => { throw new Error(`spectre sweep failed: ${cliError(e)}`) })
         return { ok: true, output: stdout.trim(), run_dir: runDir, simulator: 'spectre' }
       },
