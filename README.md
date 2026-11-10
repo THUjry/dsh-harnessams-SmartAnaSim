@@ -91,7 +91,7 @@ Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
 - `output_format` must stay `psfascii` for `spectre_parse` and for the snp_* S-parameter reader.
 - `spectre_parse` turns raw PSF ASCII (`ac.ac`, `dc*.dc`, `tran*.tran`, `*.info`) into per-point JSON with Re/Im pairs plus an index; optional long CSV curves.
 
-`spectre_checks.py` is the assembly-layer library for a project's gen script: `simulator lang=spectre`, forbidden SPICE directives, subckt/ends pairing, `@@PARAM@@` vs sweep parameters, the `template.scs` naming warning, relative include existence, the u/n-suffix geometry rule, and the ideal R/C/L value-range gate (R 0.1..1M ohm, C 1f..1u farad, L 0.1p..10n henry).
+`spectre_checks.py` is the assembly-layer library for a project's gen script: `simulator lang=spectre`, forbidden SPICE directives, subckt/ends pairing, `@@PARAM@@` vs sweep parameters, the `template.scs` naming warning, relative include existence, the u/n-suffix geometry rule, and the ideal R/C/L value-range gate (R 0.1..1M ohm, C 1f..1u farad, L 0.1p..10n henry). Workspace defaults (2026-11-10): `common_workspace.read_check_params` reads `.harnessams/check_params.json` (written by the HarnessAMS task tab's check sub-view; nearest directory wins walking up from the gen script's cwd, so both the DSH workspace root and a bare harnessams-workspace placement are found) — it supplies the default R/C/L ranges, the strict-includes switch and the unit_check switch for `check_netlist_format`, and `common_units` consults it for the unit_check/bias_check gates; every failure path falls back to the built-in constants (fail-open).
 
 ## Cluster runs (through the top-level plugin)
 

@@ -24,6 +24,12 @@ Checks:
 - the uploaded template name should be ``template.scs`` (warning; the batch
   uploader promotes this to an error).
 
+Workspace defaults (2026-11-10): <workspace>/.harnessams/check_params.json —
+edited from the HarnessAMS task sidebar's check sub-view — supplies the default
+ideal R/C/L ranges, the strict_includes switch and the unit_check switch when
+the caller does not override them; an absent or corrupted file falls back to
+the built-in constants (fail-open).
+
 Pure standard library.
 """
 import os
@@ -36,6 +42,19 @@ from common.common_units import (  # noqa: E402,F401  (re-exported for gen scrip
     CheckError, check_bias_lt_vdd, fmt_num, norm_count, norm_current,
     norm_freq, norm_length_si,
 )
+
+def _check_params():
+    """Workspace check parameters (check_params.json), fail-open to defaults.
+
+    The same file the HarnessAMS task sidebar's check sub-view edits; the
+    scripts/ root inserted above makes the common package importable.
+    """
+    try:
+        from common.common_workspace import read_check_params
+        return read_check_params(os.getcwd())
+    except Exception:
+        return {}
+
 
 _LENGTH_ATTRS = {"l", "w", "lr", "wr", "rl", "rw"}
 _SPICE_DIRECTIVES = (".control", ".endc", ".end", ".lib", ".option",
@@ -50,7 +69,8 @@ _INCLUDE = re.compile(r'^\s*(?:dspf_include|include)\s+"([^"]+)"')
 _RCL_DEVICE = {"resistor": "r", "res": "r", "capacitor": "c", "cap": "c",
                "inductor": "l", "ind": "l"}
 # Ideal plausibility ranges (inclusive) for generated netlists: 0.1 ohm..1M ohm,
-# 1 fF..1 uF, 0.1 pH..10 nH. Override via check_netlist_format(rcl_ranges=...).
+# 1 fF..1 uF, 0.1 pH..10 nH. Override via check_netlist_format(rcl_ranges=...);
+# the workspace default comes from .harnessams/check_params.json (rcl table).
 IDEAL_RCL_RANGES = {
     "r": (0.1, 1e6),     # ohm
     "c": (1e-15, 1e-6),  # farad
@@ -105,16 +125,23 @@ def _ideal_number(value):
 
 
 def check_netlist_format(text, parameters=None, template_name="template.scs",
-                         strict_includes=False, base_dir=None, rcl_ranges=None):
+                         strict_includes=None, base_dir=None, rcl_ranges=None):
     """Return (errors, warnings) for a Spectre netlist template.
 
     parameters: the sweep_config.parameters mapping (optional; when given it is
     used for the placeholder/unit checks).
+    strict_includes: when None (default) the workspace's check_params.json
+    strict_includes switch decides; True/False override it explicitly.
     rcl_ranges: override for the ideal R/C/L plausibility ranges
-    (default IDEAL_RCL_RANGES; kind -> (low, high) in the base unit).
+    (default: the check_params.json rcl table, falling back to
+    IDEAL_RCL_RANGES; kind -> (low, high) in the base unit).
     """
     errors = []
     warnings = []
+    cfg = _check_params()
+    if strict_includes is None:
+        strict_includes = bool(cfg.get("strict_includes", False))
+    unit_check = bool(cfg.get("unit_check", True))
     lines = text.splitlines()
     stripped = []
     for raw in lines:
@@ -165,13 +192,14 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
             for am in _PARAM_ASSIGN.finditer(pm.group(1)):
                 template_params[am.group(1)] = am.group(2)
 
-    ranges = IDEAL_RCL_RANGES if rcl_ranges is None else rcl_ranges
+    ranges = rcl_ranges if rcl_ranges is not None else (cfg.get("rcl") or IDEAL_RCL_RANGES)
     for s in stripped:
         im = _RCL_INSTANCE.match(s)
         kind = _RCL_DEVICE.get(im.group(3).lower()) if im else None
         if kind is None:
-            # unit suffix contract for geometry attributes (bare number = metres)
-            if parameters is not None:
+            # unit suffix contract for geometry attributes (bare number = metres);
+            # the whole unit pass is gated by the workspace unit_check switch
+            if unit_check and parameters is not None:
                 for attr, name in _INSTANCE_VALUE.findall(s):
                     if attr.lower() not in _LENGTH_ATTRS:
                         continue
@@ -182,7 +210,7 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                                           "string (e.g. '1.5u'); a bare number means metres in "
                                           "Spectre" % (attr, name, value))
                             break
-            if _LITERAL_LENGTH.search(s):
+            if unit_check and _LITERAL_LENGTH.search(s):
                 warnings.append("units: literal geometry value without a unit suffix in %r "
                                 "(Spectre reads it as metres)" % s[:120])
             continue
@@ -190,8 +218,11 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
         # ideal resistor/capacitor/inductor: value range gate (inclusive bounds).
         # Checks literals, @@P@@ swept values and template parameters references;
         # non-literal forms (expressions, unknown names) are skipped, not guessed.
+        # The range text follows the ACTIVE range (workspace-configured or
+        # built-in) so the message always matches what was enforced.
         lo, hi = ranges[kind]
-        range_text = _IDEAL_RCL_RANGE_TEXT[kind]
+        range_text = (_IDEAL_RCL_RANGE_TEXT[kind] if (lo, hi) == IDEAL_RCL_RANGES[kind]
+                      else "%g..%g %s" % (lo, hi, _RCL_UNIT[kind]))
         for am in _RCL_ATTR_VALUE.finditer(im.group(4)):
             attr, token = am.group(1), am.group(2)
             if attr != kind:

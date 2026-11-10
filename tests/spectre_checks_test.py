@@ -1,17 +1,24 @@
 # -*- coding: utf-8 -*-
 """Spectre assembly check tests: ideal RCL ranges plus the geometry-suffix
-rules that share the same line pass (run as a plain script; invoked by
-tests/spectre.test.mjs).
+rules that share the same line pass, and the check_params.json workspace
+defaults/switches (rcl / unit_check / strict_includes / bias_check).
+Run as a plain script; invoked by tests/spectre.test.mjs.
 
 Usage: python -B tests/spectre_checks_test.py
 """
+import json
+import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+from common import common_workspace  # noqa: E402
 from spectre.spectre_checks import (  # noqa: E402
-    IDEAL_RCL_RANGES, check_netlist_format, parse_ideal_value,
+    IDEAL_RCL_RANGES, CheckError, check_bias_lt_vdd, check_netlist_format,
+    norm_length_si, parse_ideal_value,
 )
 
 SWEEP_PARAMS = {"r_val": ["1k", "2k", "5k"], "c_val": ["1n", "2n", "5n"]}
@@ -157,17 +164,109 @@ def test_non_rcl_instances_untouched():
     assert errors_of(t) == [] and warnings_of(t) == []
 
 
+def test_check_params_config():
+    """Workspace defaults and switches from .harnessams/check_params.json.
+
+    Each scenario gets its own tmp workspace (harnessams.json + optional
+    check_params.json + a project dir) and chdirs into the project — the
+    config discovery walks up from the cwd, exactly like a gen script run.
+    """
+    scenarios = tempfile.mkdtemp(prefix="hams-chkpy-")
+    base = os.getcwd()
+    try:
+        def enter(ws_name, params=None, raw=None):
+            ws = Path(scenarios) / ws_name
+            proj = ws / "proj"
+            proj.mkdir(parents=True)
+            (ws / "harnessams.json").write_text("{}", encoding="utf-8")
+            if params is not None or raw is not None:
+                cfg = ws / ".harnessams"
+                cfg.mkdir()
+                (cfg / "check_params.json").write_text(
+                    raw if raw is not None else json.dumps(params), encoding="utf-8")
+            os.chdir(proj)
+            common_workspace._check_params_cache.clear()
+
+        # 1. absent file -> built-in defaults (fail-open)
+        enter("ws_defaults")
+        t = "simulator lang=spectre\nR1 (a b) resistor r=0.05\n"
+        assert any(e.startswith("rcl:") for e in errors_of(t)), errors_of(t)
+        try:
+            norm_length_si("l", 2.5e-6)
+            raise AssertionError("bare length must raise with unit_check on")
+        except CheckError:
+            pass
+
+        # 2. corrupted file -> per-key fail-open to the same defaults
+        enter("ws_corrupt", raw="{not json")
+        assert any(e.startswith("rcl:") for e in errors_of(t)), errors_of(t)
+
+        # 3. widened rcl table from the config
+        enter("ws_rcl", params={"rcl": {"r": [0.01, 1e7]}})
+        assert errors_of(t) == [], errors_of(t)  # 0.05 now inside
+        errs = [e for e in errors_of("simulator lang=spectre\nR1 (a b) resistor r=0.001\n")
+                if e.startswith("rcl:")]
+        assert len(errs) == 1 and "0.01" in errs[0] and "outside the ideal range" in errs[0], errs
+
+        # 4. unit_check off -> the geometry unit pass goes silent and bare
+        #    lengths pass through as base-unit floats
+        enter("ws_unit", params={"unit_check": False})
+        t_geo = ("simulator lang=spectre\nparameters w_val=2u\n"
+                 "M1 (d g s b) nmos w=@@w_val@@ l=0.5\n")
+        errs, warns = check_netlist_format(t_geo, parameters={"w_val": ["60"]})
+        assert errs == [] and warns == [], (errs, warns)
+        assert norm_length_si("l", 2.5e-6) == 2.5e-6
+
+        # 5. strict_includes on -> an absolute include is an error, not a warning
+        # (os.path.isabs is platform-shaped, so the probe path follows the OS)
+        enter("ws_strict", params={"strict_includes": True})
+        abs_inc = "C:/abs/path/model.scs" if os.name == "nt" else "/abs/path/model.scs"
+        t_inc = 'simulator lang=spectre\ninclude "%s"\n' % abs_inc
+        errs, warns = check_netlist_format(t_inc)
+        assert any(e.startswith("include:") for e in errs), (errs, warns)
+        enter("ws_nostrict")  # default off -> warning only
+        errs, warns = check_netlist_format(t_inc)
+        assert errs == [] and any("absolute" in w for w in warns), (errs, warns)
+
+        # 6. bias gate: off returns unchecked, on (default) raises
+        enter("ws_bias_off", params={"bias_check": False})
+        assert check_bias_lt_vdd("vb", 1.8, 1.8) == 1.8
+        enter("ws_bias_on")
+        try:
+            check_bias_lt_vdd("vb", 1.8, 1.8)
+            raise AssertionError("bias check must raise when enabled")
+        except CheckError:
+            pass
+    finally:
+        os.chdir(base)
+        common_workspace._check_params_cache.clear()
+        shutil.rmtree(scenarios, ignore_errors=True)
+
+
 def main():
-    test_parse_ideal_value()
-    test_in_range_passes()
-    test_boundary_values_inclusive()
-    test_out_of_range_literals()
-    test_case_sensitive_milli_vs_mega()
-    test_swept_placeholder_values()
-    test_template_parameters_reference()
-    test_geometry_rules_untouched()
-    test_rcl_ranges_override()
-    test_non_rcl_instances_untouched()
+    # Hermetic cwd: the default-behavior tests below must not pick up a real
+    # harnessams-workspace sitting above this repo (its check_params.json would
+    # change the defaults under test), so run them from an empty temp dir.
+    clean = tempfile.mkdtemp(prefix="hams-chk-clean-")
+    old_cwd = os.getcwd()
+    common_workspace._check_params_cache.clear()
+    os.chdir(clean)
+    try:
+        test_parse_ideal_value()
+        test_in_range_passes()
+        test_boundary_values_inclusive()
+        test_out_of_range_literals()
+        test_case_sensitive_milli_vs_mega()
+        test_swept_placeholder_values()
+        test_template_parameters_reference()
+        test_geometry_rules_untouched()
+        test_rcl_ranges_override()
+        test_non_rcl_instances_untouched()
+        test_check_params_config()
+    finally:
+        os.chdir(old_cwd)
+        common_workspace._check_params_cache.clear()
+        shutil.rmtree(clean, ignore_errors=True)
     print("spectre checks tests ok")
 
 
