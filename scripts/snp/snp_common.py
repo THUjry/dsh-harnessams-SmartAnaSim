@@ -65,7 +65,7 @@ def _load_backend():
                     # numfallback raises ZeroDivisionError on a singular input;
                     # normalize so both backends hit the same drop-bad / SnpError
                     # paths in to_z / z_to_y / schur_ground. A bare LinAlgError
-                    # used to escape as an uncaught traceback (exit 1, no JSON),
+                    # would escape as an uncaught traceback (exit 1, no JSON),
                     # splitting the two backends' behavior on the same input.
                     raise ZeroDivisionError(str(e))
 

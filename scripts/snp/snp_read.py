@@ -2,7 +2,7 @@
 """snp_read.py -- parse an S-parameter file and dump per-frequency matrices.
 
 Reads one of the three supported input formats (Touchstone .s1p..sNp, Spectre
-psfascii sp output, or a params CSV previously written by this tool), prints a
+psfascii sp output, or a params CSV written by this tool), prints a
 summary to stdout, and writes next to the input file (or into --out-dir):
 
     <stem>_read.json         machine-readable header/summary

@@ -1,10 +1,9 @@
 // HarnessAMS-SmartAnaSim plugin entry (plain-JS publish entry, no build chain;
 // dev-mount loads this file directly).
 //
-// Simulator families only (2026-11-01 redistribution: the generic remote batch
-// channel batch_* — renamed from bsub_* on 2026-11-09 — and the simulator-
-// agnostic analysis tools moved to the top-level dsh-harnessams plugin — this
-// package stays simulator-specific):
+// Simulator families only (the generic remote batch channel batch_* and the
+// simulator-agnostic analysis tools belong to the top-level dsh-harnessams
+// plugin — this package stays simulator-specific):
 //   spectre_*  local Spectre assembly + batch sweep + psfascii parsing
 //   snp_*      S-parameter reading / device extraction
 //

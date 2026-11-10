@@ -1,8 +1,6 @@
 # HarnessAMS-SmartAnaSim
 
-> Simulator plugin: Spectre channel (code-driven netlist assembly with hard PDK isolation) and S-parameter reading/extraction. Simulator-specific code only — the generic remote LSF channel (`batch_*`, renamed from `bsub_*` on 2026-11-09) and the sweep-result analysis tools (`sim_*`, HTML reports) live in the top-level `HarnessAMS` plugin. npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
->
-> The former ngspice channel was removed on 2026-11-02 (sky130 runs in Spectre after model transcription; ngspice carried only demo value) — restore it from this repo's `ngspice` branch.
+> Simulator plugin: Spectre channel (code-driven netlist assembly with hard PDK isolation) and S-parameter reading/extraction. Simulator-specific code only — the generic remote LSF channel (`batch_*`) and the sweep-result analysis tools (`sim_*`, HTML reports) live in the top-level `HarnessAMS` plugin. npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
 
 ## Tool surface (5)
 
@@ -17,7 +15,7 @@ A cluster run reaches these workers through the **top-level plugin's** generic `
 
 - `assemble` is simulator-specific: it writes `.scs` and checks `simulator lang=spectre`, placeholders, include paths, the unit-suffix rule (a bare geometry number means metres in Spectre) and ideal R/C/L value ranges.
 - `run_sweep` is simulator-specific: a local Spectre process with psfascii output and smart timeouts (license wait / output-progress extensions).
-- The generic batch channel and the data-contract analysis operations (collect / progress / report / trash) are **not** simulator details — they moved to the top-level `dsh-harnessams` plugin (2026-11-01 redistribution).
+- The generic batch channel and the data-contract analysis operations (collect / progress / report / trash) are **not** simulator details — they live in the top-level `dsh-harnessams` plugin.
 
 ## Repository layout
 
@@ -53,7 +51,7 @@ A `harnessams.json` is discovered by walking upward (bare form, or inside `harne
 
 Each simulator family registers only when its DSH plugin-config switch is not explicitly `false` (all default `true` — the full 5-tool surface). Change the config and cordis hot-swaps the plugin: the fiber restarts and the new selection registers immediately, no reboot.
 
-> DSH (verified on 0.2.1-rc.2; 0.2.2-rc.1 source-checked 2026-11-10 — the plugin manager still ships no client-side auto-render) does not auto-render a bundle's config: switches appear in the plugin manager only when the bundle ships a browser half registering the `plugins.row.config` slot (key `<package>#<row id>`). This package ships no browser half yet (deferred 2026-11-01), so edit the booleans through the profile config layer; the `Config` export still drives defaults and the hot-swap server-side.
+> DSH (verified on 0.2.1-rc.2; re-checked against 0.2.2-rc.1 sources — the plugin manager still ships no client-side auto-render) does not auto-render a bundle's config: switches appear in the plugin manager only when the bundle ships a browser half registering the `plugins.row.config` slot (key `<package>#<row id>`). This package ships no browser half (deferred), so edit the booleans through the profile config layer; the `Config` export still drives defaults and the hot-swap server-side.
 
 ```json
 {
@@ -97,7 +95,7 @@ Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
 
 ## Cluster runs (through the top-level plugin)
 
-The generic remote batch channel (`batch_submit` / `batch_poll` / `batch_fetch`, renamed from `bsub_*` on 2026-11-09) and the sweep-result analysis tools (`sim_analysis` / `sim_progress` / `safe_trash`) moved to the top-level `dsh-harnessams` plugin on 2026-11-01. Typical remote Spectre round (see the HarnessAMS repo for the full channel contract — mirrors, live-session borrowing, the remote write fence and cluster gotchas):
+The generic remote batch channel (`batch_submit` / `batch_poll` / `batch_fetch`) and the sweep-result analysis tools (`sim_analysis` / `sim_progress` / `safe_trash`) belong to the top-level `dsh-harnessams` plugin. Typical remote Spectre round (see the HarnessAMS repo for the full channel contract — mirrors, live-session borrowing, the remote write fence and cluster gotchas):
 
 ```
 batch_submit(run_dir="<proj>/sweep/Round1/top", machine_id="node1",
@@ -114,7 +112,7 @@ The uploaded worker tree is this package's `scripts/` directory (the workspace `
 
 ## S-parameter reading and extraction (snp_read / snp_extract)
 
-Inputs auto-detected: Touchstone v1 (`.s1p` .. `.sNp`), Spectre psfascii `sp.sp` (S/Y/Z paramtype), or a params CSV previously written by `snp_read` (lossless round trip). All math runs on Z-parameters (per-port reference impedances honored).
+Inputs auto-detected: Touchstone v1 (`.s1p` .. `.sNp`), Spectre psfascii `sp.sp` (S/Y/Z paramtype), or a params CSV written by `snp_read` (lossless round trip). All math runs on Z-parameters (per-port reference impedances honored).
 
 - `snp_read`: header info, band stats, reciprocity diagnostic, per-frequency S/Z/Y curve CSV.
 - `snp_extract` by `--type`:
@@ -134,16 +132,12 @@ echoes a `port_plan` to confirm.
 
 ## Reports
 
-`sim_report(project_dir)` renders `sweep/Round*/top/results.json` into `Analysis/<project>_report.html`: summary cards, interactive Plotly metric charts, per-point table. Plotly comes from a single workspace-level copy (`<workspace_root>/assets/plotly.min.js`, seeded on demand from an ancestor `assets/` / `src/assets/` / an installed `dsh-harnessams` package, or the workspace `plotly_asset` field); the CDN is the fallback. The Simulator header label comes from `results.json.simulator` (written by `sim_collect`). S-parameter curve dashboards are not part of this round: use `spectre_parse` + `snp_*` for RF analysis.
-
-## Reports
-
-Sweep-result HTML reports are generated by the top-level plugin's `sim_report` tool (from `sweep/Round*/top/results.json`); the report generator script moved with it. S-parameter curve dashboards are not part of this round: use `spectre_parse` + `snp_*` for RF analysis.
+Sweep-result HTML reports are generated by the top-level plugin's `sim_report` tool (from `sweep/Round*/top/results.json`). S-parameter curve dashboards are not part of this round: use `spectre_parse` + `snp_*` for RF analysis.
 
 ## Validation
 
 - `node --test` from the repo root (tool schema/registration, script parsing + naming, PSF parsing, Spectre worker statuses with a fake process layer, and the S-parameter regression suite; the batch-channel and report-injection tests moved to the HarnessAMS repo with the tools).
-- node1 Spectre dual-mode acceptance through the plugin tools, no direct shell or Python (2026-10-31, Broadband4 Round1 template, 2 states at 65 C): `bsub_submit(scheduler="none")` ran on node1 (`compute_node=node1`, record `direct-1793437388485`) and `bsub_submit(scheduler="lsf")` became Job **15929901** on node5; both returned 2/2 success. `bsub_fetch` recovered both point metas and both `sp.sp` files (5135 lines each); the only difference in each pair is the PSF header `date`. `snp_read` on both files gives identical band/port/max|S|/reciprocity values, and the 1564 numeric CSV rows per point are identical. An earlier ssh-only acceptance used Job 15924601; it remains reproducible with `tests/manual/compare_spectre_runs.py <run-a> <run-b>`.
+- node1 Spectre dual-mode acceptance through the plugin tools, no direct shell or Python (2026-10-31, Broadband4 Round1 template, 2 states at 65 C): `batch_submit(scheduler="direct")` ran on node1 (`compute_node=node1`, record `direct-1793437388485`) and `batch_submit(scheduler="lsf")` became Job **15929901** on node5; both returned 2/2 success. `batch_fetch` recovered both point metas and both `sp.sp` files (5135 lines each); the only difference in each pair is the PSF header `date`. `snp_read` on both files gives identical band/port/max|S|/reciprocity values, and the 1564 numeric CSV rows per point are identical. An earlier ssh-only acceptance used Job 15924601; it remains reproducible with `tests/manual/compare_spectre_runs.py <run-a> <run-b>`.
 
 ## What the package ships
 

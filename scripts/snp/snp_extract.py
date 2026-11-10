@@ -98,8 +98,8 @@ T_MODAL = [[SQRT1_2 * v for v in row] for row in
 T_MODAL_T = [[T_MODAL[j][i] for j in range(4)] for i in range(4)]
 # Default theory gate: 4x the relative off-block residual at 94 GHz of the
 # validated reference coupler (the Lange hybrid whose port mapping, Z0e/Z0o
-# and key results are regression-tested in tests/data). Calibration run
-# 2026-10-30 against its reference key_results.txt: off-block 1.46 ohm at
+# and key results are regression-tested in tests/data). Calibrated against its
+# reference key_results.txt: off-block 1.46 ohm at
 # 94 GHz on max|Zm| ~ 116 ohm -> rel 1.255e-2; gate = 4x = 5.0e-2.
 # Override with --theory-gate.
 THEORY_GATE_DEFAULT = 5.0e-2
