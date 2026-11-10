@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — 2026-11-10 (host upgrade re-pin)
+
+- **`engines.dsh` re-pinned `0.2.1-rc.2` → `0.2.2-rc.1`** (package.json,
+  package-lock.json): DSH 0.2.2 enforces the engines check even for
+  dev-mount rows, so the exact pin must track the running host. README's
+  no-auto-render config note re-checked against 0.2.2-rc.1 sources (still
+  true). Tests 30/30 re-run green on the new pin.
+
 ### Fixed — 2026-11-09 (code-review follow-ups)
 
 - **snp tool face: output paths now come from the Python `[snp] wrote` lines**
