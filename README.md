@@ -60,7 +60,7 @@ Each simulator family registers only when its DSH plugin-config switch is not ex
 }
 ```
 
-The schema is `@deepseek-ai/schemastery` (a runtime `dependencies` entry, like `dsh-remote` — installed bundles do not get devDependencies; the official `tool-fs` plugin uses the same per-tool boolean-config pattern).
+The schema is `@deepseek-ai/schemastery` (a runtime `dependencies` entry — installed bundles do not get devDependencies; the official `tool-fs` plugin uses the same per-tool boolean-config pattern).
 
 ## Spectre channel
 
@@ -95,7 +95,7 @@ Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
 
 ## Cluster runs (through the top-level plugin)
 
-The generic remote batch channel (`batch_submit` / `batch_poll` / `batch_fetch`) and the sweep-result analysis tools (`sim_analysis` / `sim_progress` / `safe_trash`) belong to the top-level `dsh-harnessams` plugin. Typical remote Spectre round (see the HarnessAMS repo for the full channel contract — mirrors, live-session borrowing, the remote write fence and cluster gotchas):
+The generic remote batch channel (`batch_submit` / `batch_poll` / `batch_fetch`) and the sweep-result analysis tools (`sim_analysis` / `sim_progress` / `safe_trash`) belong to the top-level `dsh-harnessams` plugin. Typical remote Spectre round (see the HarnessAMS repo for the full channel contract — dsh-ssh aliases, per-alias remote roots and cluster gotchas; since the 2026-11-14 dsh-remote retirement the rides are explicit `ssh_upload`/`ssh_download` calls inside the batch tools, no transparent mirror):
 
 ```
 batch_submit(run_dir="<proj>/sweep/Round1/top", machine_id="node1",
