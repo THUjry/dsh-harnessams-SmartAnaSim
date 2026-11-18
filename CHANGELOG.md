@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow semver.
 
+## [Unreleased]
+
+### Changed
+
+- snp family is now guide-gated with deferred loading: `snp_read` / `snp_extract` register with `deferLoading: true` plus a `when` admission predicate, so they stay out of the model-facing declarations until the new always-resident `snp_guide` tool is called (its execute marks the calling agent and returns the usage flow). On `toolUpdate` routes (deepseek-flash default) activation rides `tool-addition` and preserves the KV-cache prefix (~745 declaration tokens saved for spectre-only sessions); on routes without it the `when` gating still applies and activation resends the declarations once. Activation is one-way per session, keyed by agent id (survives in-process session restore; server restart self-heals via a guide re-call; sub-agents call the guide themselves). `src/tool.js` forwards def-level `deferLoading` / `when` through the local compiler. Tests 31 → 33 (deferred-registration shape + guide activation semantics).
+
 ## [0.1.0] - 2026-11-10
 
 Initial release (stage 1 scope).

@@ -5,7 +5,10 @@
 // simulator-agnostic analysis tools belong to the top-level dsh-harnessams
 // plugin — this package stays simulator-specific):
 //   spectre_*  local Spectre assembly + batch sweep + psfascii parsing
-//   snp_*      S-parameter reading / device extraction
+//   snp_*      S-parameter reading / device extraction — guide-gated: only
+//              snp_guide is always declared; snp_read/snp_extract register
+//              deferred (deferLoading + when) and enter the session via the
+//              guide (see src/tools/snp.js)
 //
 // Architecture: the plugin is only a channel — tool executes spawn plain Python
 // scripts shipped under scripts/ (assembly/check/adjudication logic lives in the
@@ -23,7 +26,7 @@ export const inject = ['tools']
 
 // DSH-native per-family toggles (official tool-fs precedent): each simulator
 // family registers only when its switch is not explicitly false (defaults keep
-// the full 5-tool surface). Changing the config hot-swaps the plugin: cordis
+// the full 6-tool surface). Changing the config hot-swaps the plugin: cordis
 // restarts the fiber and apply() re-registers with the new selection.
 export const Config = z.object({
   spectre: z.boolean().default(true).description('Register the spectre_* tool family (local Spectre assembly + batch sweep + psfascii parsing).'),

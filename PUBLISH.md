@@ -23,8 +23,11 @@ Checklist for publishing this package to npm. The repository root **is** the pac
    - `npm publish` from this directory.
 4. Post-publish verification
    - `dsh plugin --profile web add dsh-harnessams-smart-ana-sim`, restart the profile
-     (`dsh --profile web`), confirm the **5** tools register:
-     `spectre_assemble`, `spectre_run_sweep`, `spectre_parse`, `snp_read`, `snp_extract`.
+     (`dsh --profile web`), confirm the **6** tools register:
+     `spectre_assemble`, `spectre_run_sweep`, `spectre_parse`, `snp_guide` are always
+     declared; `snp_read` / `snp_extract` are deferred and appear only after a
+     `snp_guide` call admits them for the session (check via a guide call, not the
+     bare declaration list).
    - Spectre smoke: on a host with Spectre, run a two-point psfascii sweep and
      `spectre_parse`; then verify the top-level plugin's
      `batch_submit`/`batch_poll`/`batch_fetch` against a machine whose remote project has

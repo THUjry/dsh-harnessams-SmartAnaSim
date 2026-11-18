@@ -2,14 +2,23 @@
 
 > Simulator plugin: Spectre channel (code-driven netlist assembly with hard PDK isolation) and S-parameter reading/extraction. Simulator-specific code only — the generic remote LSF channel (`batch_*`) and the sweep-result analysis tools (`sim_*`, HTML reports) live in the top-level `HarnessAMS` plugin. npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
 
-## Tool surface (5)
+## Tool surface (6)
 
 | Family | Tool | Runs where |
 |---|---|---|
 | Spectre | `spectre_assemble`, `spectre_run_sweep`, `spectre_parse` | the host executing this plugin (local Spectre) |
-| S-parameter | `snp_read`, `snp_extract` | local (tools only, no UI) |
+| S-parameter | `snp_guide` (always declared) | local (tools only, no UI) |
+| S-parameter | `snp_read`, `snp_extract` (deferred, guide-gated) | local (tools only, no UI) |
 
 A cluster run reaches these workers through the **top-level plugin's** generic `batch_*` tools: pick the `spectre/spectre_sweep_worker.py` worker (resolved under the workspace `sim_scripts_dir`, which points at this package's `scripts/` tree) and pass its arguments. Nothing here mentions Spectre from the batch side, and the Spectre tools never touch the network.
+
+## Deferred snp loading (guide-gated)
+
+`snp_read` and `snp_extract` register with `deferLoading: true` plus a `when` admission predicate, so they stay out of the model-facing declarations until the always-resident `snp_guide` tool is called (its execute marks the calling agent and returns the usage flow):
+
+- On routes whose model declares `toolUpdate` (e.g. the default `deepseek-flash`), the loop appends the two tools via `tool-addition` — the KV-cache prefix is preserved; the ~745 declaration tokens are paid only by sessions that actually use the family.
+- On routes without `toolUpdate`, `deferLoading` is stripped by the route: the `when` gating still keeps the tools out of spectre-only sessions, but activation resends the full declaration list (one-time prefix break at that step).
+- Activation is **one-way** per session (addition-only routes drop tool-removal; the set is never unset) and keyed by agent id string, so it survives in-process session restore (a reopened session gets a fresh Agent object with the same id). After a server restart the set is empty and the model self-heals by calling `snp_guide` again; sub-agents are separate agents and call the guide themselves.
 
 ## Why the split
 
@@ -21,7 +30,7 @@ A cluster run reaches these workers through the **top-level plugin's** generic `
 
 ```
 src/
-  index.js                 entry: registers the 5 tools (plain JS, no build chain)
+  index.js                 entry: registers the 6 tools (plain JS, no build chain)
   tool.js                  parameter DSL -> valid JSON Schema compiler + validation
   py.js                    python spawn channel, script paths, error text
   projects.js              project gen_*.py discovery/execution (assembly bridge)
@@ -49,7 +58,7 @@ A `harnessams.json` is discovered by walking upward (bare form, or inside `harne
 
 ## Tool family toggles
 
-Each simulator family registers only when its DSH plugin-config switch is not explicitly `false` (all default `true` — the full 5-tool surface). Change the config and cordis hot-swaps the plugin: the fiber restarts and the new selection registers immediately, no reboot.
+Each simulator family registers only when its DSH plugin-config switch is not explicitly `false` (all default `true` — the full 6-tool surface, guide included on the snp side). Change the config and cordis hot-swaps the plugin: the fiber restarts and the new selection registers immediately, no reboot.
 
 > DSH (verified on 0.2.1-rc.2; re-checked against 0.2.2-rc.1 sources — the plugin manager still ships no client-side auto-render) does not auto-render a bundle's config: switches appear in the plugin manager only when the bundle ships a browser half registering the `plugins.row.config` slot (key `<package>#<row id>`). This package ships no browser half (deferred), so edit the booleans through the profile config layer; the `Config` export still drives defaults and the hot-swap server-side.
 
@@ -111,6 +120,8 @@ batch_fetch(run_dir="...", includes=["point_meta.json",
 The uploaded worker tree is this package's `scripts/` directory (the workspace `sim_scripts_dir`), so remote workers resolve `from common.common_sweep_engine import …` exactly like local ones.
 
 ## S-parameter reading and extraction (snp_read / snp_extract)
+
+These two tools are deferred and guide-gated (see "Deferred snp loading" above): call `snp_guide` first in a session that needs them.
 
 Inputs auto-detected: Touchstone v1 (`.s1p` .. `.sNp`), Spectre psfascii `sp.sp` (S/Y/Z paramtype), or a params CSV written by `snp_read` (lossless round trip). All math runs on Z-parameters (per-port reference impedances honored).
 

@@ -1,6 +1,37 @@
 // sNp family: S-parameter file reading and device extraction (tools only, no UI).
+//
+// Guide-gated deferred loading: snp_read/snp_extract carry deferLoading:true
+// plus a `when` admission predicate, so they stay out of the model-facing
+// declarations until snp_guide (always resident) is called. On routes
+// declaring toolUpdate (deepseek-flash default) the loop then appends them via
+// tool-addition without breaking the KV-cache prefix; on routes without
+// toolUpdate the `when` gating still applies while deferLoading is stripped by
+// the route (declarations resend, one-time prefix break at activation).
+// Activation is one-way — addition-only routes drop tool-removal, so the set
+// is never unset — and keyed by agent id string, which survives in-process
+// session restore (a reopened session gets a fresh Agent object with the same
+// id). After a server restart the set is empty and the model self-heals by
+// calling snp_guide again; sub-agents are separate agents and call the guide
+// themselves.
 import path from 'node:path'
 import { cliError, readJsonIfExists, runPython } from '../py.js'
+
+// agent.id strings that called snp_guide in this process (never unset).
+const snpActivated = new Set()
+
+const SNP_FLOW_DOC = 'S-parameter tools active for this session (snp_read, snp_extract).\n'
+  + '\n'
+  + 'Typical flow:\n'
+  + '1. snp_read {file} — parse a Touchstone .s1p..sNp, Spectre psfascii sp.sp or a\n'
+  + '   params CSV; writes <stem>_params_<P>.csv plus a <stem>_read.json summary\n'
+  + '   (band statistics, reciprocity diagnostic, max |Sij|).\n'
+  + '2. snp_extract {file, type} — device parameters; type is tl | coupled_tl |\n'
+  + '   transformer | inductor. An unphysical result returns ok=false WITH\n'
+  + '   summary/port_plan — that is a structured diagnosis, not a failure: inspect\n'
+  + '   port_plan and the physicality reasons before retrying.\n'
+  + '\n'
+  + 'Outputs land beside the input file unless out_dir is given; every write\n'
+  + 'prints a "[snp] wrote <path>" line.'
 
 // The Python side is the single owner of output naming: both scripts print
 // "[snp] wrote <abs path>" for every file they produce. Parsing those lines
@@ -21,7 +52,24 @@ function fallbackStem(file) {
 export function snpTools() {
   return [
     {
+      name: 'snp_guide',
+      description: 'Activate the S-parameter tools (snp_read, snp_extract) for this session and return their '
+        + 'usage flow. Call when the user wants to read a Touchstone/Spectre S-parameter file or extract '
+        + 'device parameters.',
+      parameters: {},
+      async execute(_args, exec) {
+        // The admission flag is set only inside a tool call — a call is
+        // inherently after the session's first request, which the
+        // deferred-addition mechanism requires (tools admitted before the
+        // first request land in the declaration baseline and never activate).
+        if (exec?.agent?.id) snpActivated.add(exec.agent.id)
+        return SNP_FLOW_DOC
+      },
+    },
+    {
       name: 'snp_read',
+      deferLoading: true,
+      when: ({ agent }) => !!agent?.id && snpActivated.has(agent.id),
       description: 'Read an S-parameter file (Touchstone .s1p..sNp, Spectre psfascii sp.sp, or a snp_read params '
         + 'CSV) and dump per-frequency S/Z/Y matrices to CSV, with header info, band statistics, a reciprocity '
         + 'diagnostic and max |Sij|. Device parameter extraction is snp_extract.',
@@ -48,6 +96,8 @@ export function snpTools() {
     },
     {
       name: 'snp_extract',
+      deferLoading: true,
+      when: ({ agent }) => !!agent?.id && snpActivated.has(agent.id),
       description: 'Extract device parameters from an S-parameter file (same input formats as snp_read). '
         + 'Types: transformer (L1/L2/Q1/Q2/k, two SRFs, Gmax; 2/3/4/5/6 ports), inductor (L/Q/SRF; 1/2/3 ports), '
         + 'tl (Zc/gamma*l/theta, optional eps_eff/alpha via length_m; 2 ports or 4-port differential), coupled_tl '

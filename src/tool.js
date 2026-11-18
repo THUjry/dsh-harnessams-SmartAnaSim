@@ -93,7 +93,7 @@ export function validateArgs(schema, args) {
 
 export function makeTool(def) {
   const parameters = compileParameters(def.parameters)
-  return {
+  const tool = {
     name: def.name,
     description: def.description,
     parameters,
@@ -111,6 +111,12 @@ export function makeTool(def) {
       return def.execute(args ?? {}, exec)
     },
   }
+  // Author-facing `deferLoading` (literal true only, same rule as defineTool)
+  // marks the tool for deferred declaration loading; the registry projection
+  // preserves it and toolUpdate-capable routes activate the tool via
+  // tool-addition instead of resending the full declaration list.
+  if (def.deferLoading === true) tool.deferLoading = true
+  return tool
 }
 
 export function registerTools(ctx, defs) {
@@ -120,7 +126,11 @@ export function registerTools(ctx, defs) {
     if (names.has(def.name)) throw new Error(`duplicate tool name: ${def.name}`)
     names.add(def.name)
     if (def.name === 'run_code') throw new Error('tool name "run_code" is reserved')
-    ctx.tools.register(makeTool(def))
+    // A def may carry a `when` admission predicate (author-facing; makeTool
+    // keeps it out of the registered tool object). It is evaluated by the
+    // agent loop once per proposed step — keep it pure (no I/O, no registry
+    // mutation) and one-way per session.
+    ctx.tools.register(makeTool(def), def.when ? { when: def.when } : undefined)
   }
   return names
 }

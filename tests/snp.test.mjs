@@ -290,7 +290,7 @@ test('tool face: snp_read returns a summary for a params-CSV input (stem contrac
   const s = await synth('xfmr2', 'xfmr2.s2p')
   const first = await readSnp(s.file) // touchstone -> <stem>_params_S.csv
   const csv = path.join(first.dir, `${first.stem}_params_S.csv`)
-  const res = await snpTools()[0].execute({ file: csv })
+  const res = await snpTools().find((d) => d.name === 'snp_read').execute({ file: csv })
   assert.equal(res.ok, true)
   assert.ok(res.summary, 'summary must not be null for a params-CSV input')
   assert.equal(res.summary.param, 'S')
@@ -302,7 +302,7 @@ test('tool face: unphysical snp_extract (exit 1) returns ok=false WITH summary/p
   // snp_extract.py writes the JSON and exits 1 by contract; the tool must
   // surface the structured diagnosis instead of throwing it away.
   const s = await synth('tl2', 'tl2.s2p')
-  const res = await snpTools()[1].execute({ file: s.file, type: 'transformer' })
+  const res = await snpTools().find((d) => d.name === 'snp_extract').execute({ file: s.file, type: 'transformer' })
   assert.equal(res.ok, false)
   assert.ok(res.port_plan, 'port_plan must survive the unphysical exit')
   assert.ok(res.summary, 'summary must survive the unphysical exit')
@@ -311,6 +311,6 @@ test('tool face: unphysical snp_extract (exit 1) returns ok=false WITH summary/p
 
 test('tool face: snp_extract with no JSON on failure still throws', async () => {
   const missing = path.join(tmpdir(), `definitely-missing-${Date.now()}.s2p`)
-  await assert.rejects(() => snpTools()[1].execute({ file: missing, type: 'tl' }),
+  await assert.rejects(() => snpTools().find((d) => d.name === 'snp_extract').execute({ file: missing, type: 'tl' }),
     /snp_extract failed/)
 })

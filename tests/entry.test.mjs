@@ -6,7 +6,7 @@ import { name, inject, apply, toolDefinitions, Config } from '../src/index.js'
 import { compileParameters, makeTool } from '../src/tool.js'
 
 const EXPECTED = [
-  'snp_extract', 'snp_read',
+  'snp_extract', 'snp_guide', 'snp_read',
   'spectre_assemble', 'spectre_parse', 'spectre_run_sweep',
 ]
 
@@ -16,7 +16,7 @@ test('plugin metadata', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('apply registers the 5 simulator tools', () => {
+test('apply registers the 6 simulator tools', () => {
   const registered = []
   const ctx = {
     effect: (fn) => { fn() },
@@ -44,7 +44,7 @@ test('family toggles select the registered tool families (only explicit false tr
   const names = (config) => toolDefinitions({}, config).map((d) => d.name).sort()
   assert.deepEqual(names({}), EXPECTED)
   assert.deepEqual(names(undefined), EXPECTED)
-  assert.deepEqual(names({ spectre: false }), ['snp_extract', 'snp_read'])
+  assert.deepEqual(names({ spectre: false }), ['snp_extract', 'snp_guide', 'snp_read'])
   assert.deepEqual(names({ snp: false }),
     ['spectre_assemble', 'spectre_parse', 'spectre_run_sweep'])
   assert.deepEqual(names({ spectre: false, snp: false }), [])
@@ -60,7 +60,7 @@ test('family toggles select the registered tool families (only explicit false tr
 
 test('every tool compiles to an object-rooted JSON Schema with typed properties', () => {
   const defs = toolDefinitions()
-  assert.equal(defs.length, 5)
+  assert.equal(defs.length, 6)
   for (const def of defs) {
     const tool = makeTool(def)
     assert.equal(tool.parameters.type, 'object', `${def.name} parameters root`)
@@ -111,4 +111,40 @@ test('parameter enum declarations survive compilation', () => {
   assert.deepEqual(extract.parameters.properties.type.enum,
     ['tl', 'coupled_tl', 'transformer', 'inductor'])
   assert.deepEqual(extract.parameters.required.sort(), ['file', 'type'])
+})
+
+test('deferred snp tools register with when + deferLoading; guide and spectre_* do not', () => {
+  const registered = new Map() // name -> { tool, opts }
+  const ctx = {
+    effect: (fn) => { fn() },
+    tools: { register: (t, opts) => registered.set(t.name, { tool: t, opts }) },
+  }
+  apply(ctx)
+  for (const name of ['snp_read', 'snp_extract']) {
+    assert.equal(registered.get(name).tool.deferLoading, true, `${name} deferLoading`)
+    assert.equal(typeof registered.get(name).opts?.when, 'function', `${name} when`)
+  }
+  for (const name of ['snp_guide', 'spectre_assemble', 'spectre_run_sweep', 'spectre_parse']) {
+    assert.equal(registered.get(name).tool.deferLoading, undefined, `${name} no deferLoading`)
+    assert.equal(registered.get(name).opts, undefined, `${name} registered without options`)
+  }
+})
+
+test('snp_guide activates the deferred family for the calling agent only', async () => {
+  const defs = toolDefinitions()
+  const guide = makeTool(defs.find((d) => d.name === 'snp_guide'))
+  const deferred = defs.filter((d) => d.deferLoading === true)
+  assert.deepEqual(deferred.map((d) => d.name).sort(), ['snp_extract', 'snp_read'])
+  // Unique id: the activation set is module-level and shared across tests.
+  const agent = { id: `session-guide-test-${Date.now()}` }
+  assert.equal(deferred.every((d) => d.when({ agent }) === false), true)
+  const doc = await guide.execute({}, { agent })
+  assert.equal(typeof doc, 'string')
+  assert.match(doc, /snp_read/)
+  assert.equal(deferred.every((d) => d.when({ agent }) === true), true)
+  assert.equal(deferred.every((d) => d.when({ agent: { id: 'some-other-agent' } }) === false), true)
+  // Degenerate contexts (service-level call without an agent, activation
+  // context without an id) must not admit or crash.
+  await guide.execute({}, {})
+  assert.equal(deferred.every((d) => d.when({}) === false), true)
 })
