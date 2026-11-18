@@ -97,8 +97,10 @@ export function makeTool(def) {
     name: def.name,
     description: def.description,
     parameters,
-    output: {
-      // Object-rooted and explicitly open: the registry validates this schema.
+    output: def.output ?? {
+      // Object-rooted and explicitly open: the registry validates this schema
+      // against execute() results (a string return needs a string-schema
+      // override on the def — see snp_guide).
       schema: { type: 'object', properties: { ok: { type: 'boolean' } }, additionalProperties: true },
       render: (_args, value) => [{
         type: 'text',

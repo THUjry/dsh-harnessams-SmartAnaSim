@@ -71,8 +71,13 @@ test('every tool compiles to an object-rooted JSON Schema with typed properties'
     for (const key of tool.parameters.required || []) {
       assert.ok(Object.hasOwn(tool.parameters.properties, key), `${def.name} required ${key}`)
     }
-    assert.equal(tool.output.schema.type, 'object')
-    assert.equal(tool.output.schema.additionalProperties, true)
+    // The registry validates execute() results against output.schema: every
+    // tool uses makeTool's object-rooted default except snp_guide, whose
+    // string flow doc carries a string-schema output override.
+    assert.equal(tool.output.schema.type, def.name === 'snp_guide' ? 'string' : 'object')
+    if (def.name !== 'snp_guide') {
+      assert.equal(tool.output.schema.additionalProperties, true)
+    }
     assert.equal(typeof tool.output.render, 'function')
   }
 })

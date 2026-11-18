@@ -57,6 +57,15 @@ export function snpTools() {
         + 'usage flow. Call when the user wants to read a Touchstone/Spectre S-parameter file or extract '
         + 'device parameters.',
       parameters: {},
+      // The registry validates execute() results against output.schema, so
+      // the string flow doc needs a string schema (the official guide-tool
+      // pattern) instead of makeTool's default object wrapper — returning a
+      // bare string under the default schema fails with `"value" must be an
+      // object` (caught live on 2026-11-18).
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: String(value) }],
+      },
       async execute(_args, exec) {
         // The admission flag is set only inside a tool call — a call is
         // inherently after the session's first request, which the
