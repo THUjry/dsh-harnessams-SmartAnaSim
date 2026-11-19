@@ -82,6 +82,10 @@ def _load_backend():
 
 INV, MATMUL, BACKEND = _load_backend()
 
+# single family-wide JSON atomic-write helper (scripts/common/common_workspace)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "common"))
+import common_workspace as _cw  # noqa: E402
+
 
 class SnpError(Exception):
     """User-facing input/consistency error (maps to CLI exit code 2)."""
@@ -216,9 +220,13 @@ def parse_touchstone(path):
         for tok in line.split():
             try:
                 # tolerate Fortran-style D exponents
-                nums.append(float(tok.replace("D", "E").replace("d", "e")))
+                v = float(tok.replace("D", "E").replace("d", "e"))
             except ValueError:
                 raise SnpError("non-numeric token %r in %s" % (tok, path))
+            if not math.isfinite(v):
+                raise SnpError("non-finite token %r (nan/inf rejected) in %s"
+                               % (tok, path))
+            nums.append(v)
     warnings = []
     if not saw_option:
         warnings.append("no '#' option line: defaults HZ/MA/R 50 assumed")
@@ -257,8 +265,24 @@ def parse_touchstone(path):
 
 _PSF_VAL_RE = re.compile(r'^"(\w+)"\s*\(\s*([-\d.eE+]+)\s+([-\d.eE+]+)\s*\)')
 _PSF_FREQ_RE = re.compile(r'^"freq"\s+([-\d.eE+]+)')
-_PSF_PORT_RE = re.compile(r'^"PORT(\d+):(r|num)"\s+([-\d.eE+]+)')
+# case-insensitive PORT: direct spectre writes uppercase "PORT0:..." (0-based),
+# EMX writes lowercase "port1:..." (1-based) - port numbering is taken from the
+# PORT<k>:num field when present, so either flavour maps correctly
+_PSF_PORT_RE = re.compile(r'(?i)^"PORT(\d+):(r|num)"\s+([-\d.eE+]+)')
 _PSF_NPORT_RE = re.compile(r'^"number of ports"\s+(\d+)')
+
+
+def _psf_float(tok, line, path):
+    """float() with a structured error: the number class can capture strings
+    like '1.2.3' that float() rejects, and nan/inf are rejected on entry."""
+    try:
+        v = float(tok)
+    except ValueError:
+        raise SnpError("bad number %r in %s: %r" % (tok, path, line))
+    if not math.isfinite(v):
+        raise SnpError("non-finite number %r (nan/inf rejected) in %s"
+                       % (tok, path))
+    return v
 
 
 def parse_psfascii(path):
@@ -309,7 +333,7 @@ def parse_psfascii(path):
             if section == "VALUE":
                 mf = _PSF_FREQ_RE.match(s)
                 if mf:
-                    freq.append(float(mf.group(1)))
+                    freq.append(_psf_float(mf.group(1), s, path))
                     continue
                 mv = _PSF_VAL_RE.match(s)
                 if mv:
@@ -317,7 +341,8 @@ def parse_psfascii(path):
                     if name not in data:
                         trace.append(name)
                         data[name] = []
-                    data[name].append(complex(float(mv.group(2)), float(mv.group(3))))
+                    data[name].append(complex(_psf_float(mv.group(2), s, path),
+                                              _psf_float(mv.group(3), s, path)))
                 continue
             if section == "END":
                 break
@@ -456,7 +481,7 @@ def load_any(path):
         return parse_params_csv(path)
     if re.search(r"\.s\d+p$", name):
         return parse_touchstone(path)
-    if name.endswith(".sp") or name.endswith(".sp.sp"):
+    if name.endswith(".sp"):  # also covers the doubled ".sp.sp" suffix
         return parse_psfascii(path)
     # fall back to content sniffing
     try:
@@ -607,9 +632,7 @@ def first_p2n_crossing(freq, y):
             prev = None
             continue
         if prev is not None and prev > 0 and y[i] <= 0:
-            if prev == y[i]:
-                return freq[i - 1]
-            t = prev / (prev - y[i])
+            t = prev / (prev - y[i])  # prev==y[i] is unreachable here (signs differ)
             return freq[i - 1] + t * (freq[i] - freq[i - 1])
         prev = y[i]
     return None
@@ -712,12 +735,11 @@ def sign_reduce(mats, sign_vecs):
 
 
 def write_json_atomic(path, obj):
-    """Write JSON atomically (tmp + os.replace), UTF-8, trailing newline."""
-    path = Path(path)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    text = json.dumps(obj, indent=2, ensure_ascii=True) + "\n"
-    tmp.write_text(text, encoding="utf-8", newline="\n")
-    os.replace(tmp, path)
+    """Write JSON atomically (tmp + os.replace), UTF-8, trailing newline.
+
+    Delegates to the single family-wide copy in scripts/common/common_workspace
+    (atomic_write_json) instead of keeping a second implementation here."""
+    return _cw.atomic_write_json(str(path), obj)
 
 
 def cdict(z):

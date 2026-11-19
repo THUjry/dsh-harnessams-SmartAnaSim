@@ -1,11 +1,11 @@
 // snp_* tool tests: synthetic fixtures with analytically known devices
 // (tests/synth_helper.py) plus regression against anonymized real EM data
 // (tests/data). Run with bare `node --test` from the repo root.
-import test from 'node:test'
+import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,7 +18,15 @@ const READER = path.join(ROOT, 'scripts', 'snp', 'snp_read.py')
 const SYNTH = path.join(ROOT, 'tests', 'synth_helper.py')
 const DATA = path.join(ROOT, 'tests', 'data')
 
-const tmp = () => mkdtempSync(path.join(tmpdir(), 'snp-'))
+const tmpDirs = []
+const tmp = () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'snp-'))
+  tmpDirs.push(dir)
+  return dir
+}
+after(() => {
+  for (const dir of tmpDirs) rmSync(dir, { recursive: true, force: true })
+})
 
 async function synth(kind, name) {
   const dir = tmp()
@@ -62,6 +70,26 @@ function approxXfmr(j, label = '') {
 }
 
 const GHz = 1e9
+
+test('input rejection: nan tokens, non-positive length, non-finite freq (exit 2)', async () => {
+  const dir = tmp()
+  const bad = path.join(dir, 'nan.s2p')
+  writeFileSync(bad, '# HZ MA R 50\n1.0e9 nan 0 0 0 0 0 0 0\n')
+  const run = (args) => execFileAsync('python', ['-B', EXTRACT, ...args],
+    { timeout: 120_000 }).then(() => null, (e) => e)
+  const e1 = await run(['--file', bad, '--type', 'inductor', '--coil', '1', '--out-dir', dir])
+  assert.equal(e1.code, 2, 'nan token must exit 2')
+  assert.match(e1.stderr, /non-finite/)
+  const { file: good } = await synth('ind1', 'ind_ok.s2p')
+  const e2 = await run(['--file', good, '--type', 'inductor', '--coil', '1',
+    '--length-m', '-0.5', '--out-dir', tmp()])
+  assert.equal(e2.code, 2, 'negative length must exit 2')
+  assert.match(e2.stderr, /--length-m/)
+  const e3 = await run(['--file', good, '--type', 'inductor', '--coil', '1',
+    '--freq-hz', 'nan', '--out-dir', tmp()])
+  assert.equal(e3.code, 2, 'nan freq must exit 2')
+  assert.match(e3.stderr, /--freq-hz/)
+})
 
 test('tl: ideal 2-port line (touchstone + Z-params CSV agree)', async () => {
   const s = await synth('tl2', 'tl2.s2p')

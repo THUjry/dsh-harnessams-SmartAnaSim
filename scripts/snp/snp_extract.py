@@ -319,7 +319,6 @@ def enumerate_candidates(dev, n, se_set):
     free = [p for p in range(1, n + 1) if p not in se_set]
     plans = []
     if dev in ("inductor", "transformer"):
-        sizes = {"inductor": (1, 0), "transformer": (2, 2)}[dev]
         if dev == "transformer":
             if n == 2:
                 combos = [([1], [2]), ([2], [1])]
@@ -425,14 +424,14 @@ def reduce_plan(mats, plan, n):
 
 
 def schur_safe(mats, se_idx):
-    if not se_idx:
-        return mats
-    try:
-        return sc.schur_ground(mats, se_idx)
-    except sc.SnpError:
-        # a fully-degenerate ground block: drop those ports instead
-        keep = [i for i in range(len(mats[0])) if i not in se_idx]
-        return [[[m[i][j] for j in keep] for i in keep] for m in mats]
+    """Eliminate grounded ports via the Schur complement.
+
+    A singular ground block is ill-posed when coupled to the kept ports (there
+    is no finite grounded answer; decoupled-singular inputs cannot even reach
+    here because to_z would have failed first), so schur_ground's SnpError
+    propagates as a reported unphysical reason instead of silently returning
+    the open-circuit block."""
+    return sc.schur_ground(mats, se_idx)
 
 
 # ---------------------------------------------------------------------------
@@ -797,6 +796,15 @@ def main(argv=None):
     se = parse_se_spec(args.se) if args.se else []
     for opt in ("coil1", "coil2", "coil3", "coil4", "coil"):
         setattr(args, opt, parse_ports_spec(opt, getattr(args, opt)) if getattr(args, opt) else None)
+    if args.freq_hz is not None and not math.isfinite(args.freq_hz):
+        print("[snp] error: --freq-hz must be finite (got %r)" % args.freq_hz,
+              file=sys.stderr)
+        return 2
+    if args.length_m is not None and not (math.isfinite(args.length_m)
+                                          and args.length_m > 0):
+        print("[snp] error: --length-m must be a positive finite number (got %r)"
+              % args.length_m, file=sys.stderr)
+        return 2
 
     try:
         data = sc.load_any(args.file)
@@ -833,16 +841,21 @@ def main(argv=None):
         # auto port adjustment: enumerate candidates, score on the decimated grid
         cands = enumerate_candidates(dev, n, set(se))
         best = None
+        best_rep = None
         for cand in cands:
             ev = eval_plan(zd, cand, freq_sel, i_ex_full, zref)
+            rep = _cand_report(ev, chosen=False)
+            cand_reports.append(rep)
             if ev["ok"] and (best is None or ev["rank"] > best["rank"]):
                 best = ev
-            cand_reports.append(_cand_report(ev, chosen=False))
-        cand_reports.sort(key=lambda r: (not r["chosen"], -(r["rank"] or -1e18)))
+                best_rep = rep
         if best is None:
             chosen = eval0  # keep the requested/default plan; report failure
+            cand_reports.append(_cand_report(eval0, chosen=True))
         else:
             chosen = best
+            best_rep["chosen"] = True
+        cand_reports.sort(key=lambda r: (not r["chosen"], -(r["rank"] or -1e18)))
 
     plan = chosen["plan"]
     # full-grid recompute for the winning plan
@@ -852,8 +865,11 @@ def main(argv=None):
     f_ex = freq[i_ex]
     w_ex = 2.0 * math.pi * f_ex
 
+    # the ok verdict comes from the full-grid recompute (the decimated grid is
+    # only a screening pass); a divergence between the two is surfaced as a
+    # warning rather than silently keeping the screening verdict
     result = {
-        "ok": chosen["ok"],
+        "ok": full["ok"],
         "device": dev,
         "source": str(Path(args.file).resolve()),
         "format": data.fmt_desc,
@@ -887,11 +903,15 @@ def main(argv=None):
         "candidates": cand_reports[:8],
         "warnings": sorted(set(zd.warnings)),
     }
+    if chosen["ok"] != full["ok"]:
+        result["warnings"] = sorted(set(zd.warnings) | {
+            "physicality verdict differs between the decimated screening grid "
+            "and the full grid; the full-grid verdict is reported"})
 
-    unphysical = not chosen["ok"]
+    unphysical = not full["ok"]
     if unphysical:
-        result["physicality"] = {"ok": False, "reasons": chosen["reasons"]}
-        for w in chosen["reasons"]:
+        result["physicality"] = {"ok": False, "reasons": full["reasons"]}
+        for w in full["reasons"]:
             print("[snp] warning: physicality: %s" % w)
 
     out_dir = Path(args.out_dir) if args.out_dir else Path(args.file).resolve().parent
@@ -950,7 +970,7 @@ def main(argv=None):
         summary = {"Zc_ohm": sc.cdict(zc) if zc else None,
                    "gamma_l": sc.cdict(gl) if gl else None,
                    "theta_deg": math.degrees(th_ex) if th_ex is not None else None}
-        if args.length_m and gl and th_ex is not None:
+        if args.length_m is not None and gl and th_ex is not None:
             length = args.length_m
             beta = th_ex / length
             eps_eff = (beta * 299792458.0 / w_ex) ** 2

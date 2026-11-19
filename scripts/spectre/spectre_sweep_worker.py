@@ -352,7 +352,12 @@ def main(argv=None):
     init_worker_state(work_dir, len(combos))
 
     total = len(combos)
-    gto = float(config.get("timeout_per_point", 600)) * total / max(1, max_parallel) + 300
+    # global budget accounts for both per-point extensions (license wait and
+    # raw-progress) so a legitimately extending sweep is not wound down early
+    timeout_cfg = float(config.get("timeout_per_point", 600))
+    lic_ext = float(config.get("license_wait_extension_sec", 120))
+    raw_ext = float(config.get("raw_progress_extension_sec", 120))
+    gto = (timeout_cfg + lic_ext + raw_ext) * total / max(1, max_parallel) + 300
     t0 = time.monotonic()
     print("[sweep] spectre: %d points, max_parallel=%d, timeout/point=%ss, global budget=%.0fs"
           % (total, max_parallel, config.get("timeout_per_point", 600), gto))
@@ -383,9 +388,19 @@ def main(argv=None):
                 next_progress = time.monotonic() + PROGRESS_PERIOD_SEC
             if time.monotonic() - t0 > gto:
                 print("[sweep] global budget %.0fs exhausted; winding down early "
-                      "(unstarted points are not submitted)" % gto)
+                      "(already-submitted but unstarted points get an explicit "
+                      "cancelled meta)" % gto)
                 for f2 in futures:
-                    f2.cancel()
+                    if f2.cancel():  # True only for futures that never started
+                        i2 = futures[f2]
+                        atomic_write_json(
+                            os.path.join(work_dir, point_name(i2), "point_meta.json"),
+                            {"point_index": i2, "point_name": point_name(i2),
+                             "simulator": "spectre", "params": combos[i2],
+                             "status": "error", "elapsed_sec": 0,
+                             "error_message": "cancelled: global sweep budget "
+                                              "exhausted before start",
+                             "signals": {}, "finished_at": utc_now()})
                 break
 
     prog = write_progress(work_dir, names, combos)

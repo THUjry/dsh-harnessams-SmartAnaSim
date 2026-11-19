@@ -54,11 +54,6 @@ def matmul(a, b):
     return out
 
 
-def eye(n):
-    """Identity matrix as nested lists."""
-    return [[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)]
-
-
 if __name__ == "__main__":  # pragma: no cover - manual smoke
     a = [[2 + 1j, 1], [1, 3 - 1j]]
     ainv = inv(a)

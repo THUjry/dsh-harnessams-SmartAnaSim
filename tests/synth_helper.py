@@ -28,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "snp"))
 import snp_common as sc  # noqa: E402
+from snp_extract import T_MODAL as T4  # noqa: E402  (single copy of the modal matrix)
 
 FMIN, FMAX, NPTS = 0.5e9, 60e9, 119
 CTL_F0 = 30.0e9
@@ -75,8 +76,6 @@ def permute(z, perm):
     return [[z[perm[i]][perm[j]] for j in range(n)] for i in range(n)]
 
 
-T4 = [[v / math.sqrt(2.0) for v in row] for row in
-      [[1, 1, 0, 0], [0, 0, 1, 1], [1, -1, 0, 0], [0, 0, 1, -1]]]
 T4T = [[T4[j][i] for j in range(4)] for i in range(4)]
 
 
