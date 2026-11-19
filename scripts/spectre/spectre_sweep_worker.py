@@ -68,7 +68,7 @@ from common.common_sweep_engine import (  # noqa: E402
     generate_combinations, init_worker_state, point_name, utc_now,
     write_errlog, write_progress, write_simulator,
 )
-from common.common_workspace import find_workspace_config, resolve_path  # noqa: E402
+from common.common_workspace import atomic_write_json, utc_now, write_errlog  # noqa: E402
 from spectre.spectre_psf_parse import parse_psf_ascii_file, scalar_signals  # noqa: E402
 
 print_lock = threading.Lock()
@@ -292,14 +292,12 @@ def run_single_point(work_dir, idx, params, config, spectre_cmd):
     return result
 
 
-def resolve_spectre_cmd(config, work_dir, ws, ws_dir, override=None):
+def resolve_spectre_cmd(config, work_dir, override=None):
+    # chain: --spectre-cmd > sweep_config.spectre_cmd > PATH 'spectre' (the
+    # workspace spectre_cmd layer retired with harnessams.json, 2026-11-19)
     cmd = override or config.get("spectre_cmd")
     if cmd and not os.path.isabs(cmd) and os.sep in cmd:
         cmd = os.path.normpath(os.path.join(work_dir, cmd))
-    if not cmd:
-        cmd = (ws or {}).get("spectre_cmd")
-        if cmd and not os.path.isabs(cmd) and os.sep in cmd:
-            cmd = resolve_path(cmd, ws_dir or work_dir)
     if not cmd:
         cmd = "spectre"
     if not os.path.isabs(cmd) and os.sep not in cmd:
@@ -338,12 +336,11 @@ def main(argv=None):
         print(msg, file=sys.stderr)
         return 2
 
-    ws, ws_dir = find_workspace_config(work_dir)
-    spectre_cmd = resolve_spectre_cmd(config, work_dir, ws, ws_dir, args.spectre_cmd)
+    spectre_cmd = resolve_spectre_cmd(config, work_dir, args.spectre_cmd)
     probe = spectre_cmd if os.path.isfile(spectre_cmd) else shutil.which(spectre_cmd)
     if not probe:
-        msg = ("Spectre executable not found: %r (set sweep_config.spectre_cmd, the "
-               "workspace spectre_cmd, or --spectre-cmd; remote runs use the batch tools)"
+        msg = ("Spectre executable not found: %r (set sweep_config.spectre_cmd or "
+               "--spectre-cmd; remote runs use the batch tools)"
                % spectre_cmd)
         write_errlog(work_dir, msg)
         print(msg, file=sys.stderr)

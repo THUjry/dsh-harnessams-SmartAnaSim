@@ -167,9 +167,9 @@ def test_non_rcl_instances_untouched():
 def test_check_params_config():
     """Workspace defaults and switches from .harnessams/check_params.json.
 
-    Each scenario gets its own tmp workspace (harnessams.json + optional
-    check_params.json + a project dir) and chdirs into the project — the
-    config discovery walks up from the cwd, exactly like a gen script run.
+    Each scenario gets its own tmp workspace (optional check_params.json +
+    a project dir) and chdirs into the project — the config discovery walks
+    up from the cwd, exactly like a gen script run.
     """
     scenarios = tempfile.mkdtemp(prefix="hams-chkpy-")
     base = os.getcwd()
@@ -178,7 +178,6 @@ def test_check_params_config():
             ws = Path(scenarios) / ws_name
             proj = ws / "proj"
             proj.mkdir(parents=True)
-            (ws / "harnessams.json").write_text("{}", encoding="utf-8")
             if params is not None or raw is not None:
                 cfg = ws / ".harnessams"
                 cfg.mkdir()
@@ -259,7 +258,6 @@ def test_check_params_session_layer():
             ws = Path(scenarios) / ws_name
             proj = ws / "proj"
             proj.mkdir(parents=True)
-            (ws / "harnessams.json").write_text("{}", encoding="utf-8")
             cfg = ws / ".harnessams"
             cfg.mkdir()
             if project_params is not None:
