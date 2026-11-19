@@ -22,6 +22,9 @@ export function scriptPath(relPath) {
 export async function runPython(scriptRel, args, timeoutMs = 900_000, options = {}) {
   const abs = scriptPath(scriptRel)
   if (!fs.existsSync(abs)) throw new Error(`pipeline script missing: ${abs}`)
+  // options.env MERGES into the child env (callers thread per-session facts
+  // like DSH_SESSION_ID through; a full env replacement would drop PATH etc.).
+  const { env: extraEnv, ...rest } = options
   return execFileAsync('python', [abs, ...args], {
     timeout: timeoutMs,
     maxBuffer: 32 * 1024 * 1024,
@@ -30,8 +33,8 @@ export async function runPython(scriptRel, args, timeoutMs = 900_000, options = 
     // Python < 3.15 encodes piped stdout by locale (cp936 on zh-CN Windows)
     // while we decode utf-8 — force UTF-8 mode so non-ASCII paths in output
     // (e.g. "[snp] wrote <path>") survive the round trip.
-    env: { ...process.env, PYTHONUTF8: '1' },
-    ...options,
+    env: { ...process.env, PYTHONUTF8: '1', ...extraEnv },
+    ...rest,
   })
 }
 
@@ -46,6 +49,16 @@ export function readJsonIfExists(file) {
   } catch {
     return null
   }
+}
+
+// Per-session env overlay for Python workers (HarnessAMS D-008): exec.agent.id
+// IS the calling session's id, and common_workspace.read_check_params resolves
+// the calling session's confirmed check table through DSH_SESSION_ID. Absent
+// identity (direct server-side calls, tests) returns an empty overlay — the
+// workers then resolve the project-level fallback chain.
+export function sessionEnv(exec) {
+  const sid = typeof exec?.agent?.id === 'string' && exec.agent.id ? exec.agent.id : null
+  return sid ? { DSH_SESSION_ID: sid } : {}
 }
 
 export function resolveDir(dir) {

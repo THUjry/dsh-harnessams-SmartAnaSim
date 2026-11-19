@@ -14,7 +14,7 @@
 // calling snp_guide again; sub-agents are separate agents and call the guide
 // themselves.
 import path from 'node:path'
-import { cliError, readJsonIfExists, runPython } from '../py.js'
+import { cliError, readJsonIfExists, runPython, sessionEnv } from '../py.js'
 
 // agent.id strings that called snp_guide in this process (never unset).
 const snpActivated = new Set()
@@ -87,11 +87,11 @@ export function snpTools() {
         param: { type: 'string', enum: ['S', 'Z', 'Y'], description: 'Matrix kind to dump (default S)' },
         out_dir: { type: 'string', description: 'Output directory (default: beside the input file)' },
       },
-      async execute(args) {
+      async execute(args, exec) {
         const argv = ['--file', String(args.file)]
         if (args.param) argv.push('--param', String(args.param))
         if (args.out_dir) argv.push('--out-dir', String(args.out_dir))
-        const { stdout } = await runPython('snp/snp_read.py', argv, 180_000)
+        const { stdout } = await runPython('snp/snp_read.py', argv, 180_000, { env: sessionEnv(exec) })
           .catch((e) => { throw new Error(`snp_read failed: ${cliError(e)}`) })
         const dir = args.out_dir ? path.resolve(args.out_dir) : path.dirname(path.resolve(String(args.file)))
         const jsonPath = wrotePaths(stdout).find((p) => p.endsWith('_read.json'))
@@ -134,7 +134,7 @@ export function snpTools() {
         theory_gate: { type: 'number', description: 'coupled_tl relative off-block residual gate for theory_ok' },
         out_dir: { type: 'string', description: 'Output directory (default: beside the input file)' },
       },
-      async execute(args) {
+      async execute(args, exec) {
         const argv = ['--file', String(args.file), '--type', String(args.type)]
         for (const [k, v] of Object.entries(args)) {
           if (['file', 'type', 'out_dir'].includes(k) || v === undefined || v === null || v === '') continue
@@ -148,7 +148,7 @@ export function snpTools() {
         let stdout = ''
         let failed = null
         try {
-          ;({ stdout } = await runPython('snp/snp_extract.py', argv, 300_000))
+          ;({ stdout } = await runPython('snp/snp_extract.py', argv, 300_000, { env: sessionEnv(exec) }))
         } catch (e) {
           stdout = typeof e?.stdout === 'string' ? e.stdout : ''
           failed = e

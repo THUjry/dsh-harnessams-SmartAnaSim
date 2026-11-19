@@ -10,7 +10,7 @@ import { cliError } from './py.js'
 
 const execFileAsync = promisify(execFile)
 
-export async function runAssembly(projectDir, { genScript, outDir, simulator } = {}) {
+export async function runAssembly(projectDir, { genScript, outDir, simulator, extraEnv } = {}) {
   if (!projectDir) throw new Error('project_dir is required')
   const proj = path.resolve(projectDir)
   const analysisDir = path.join(proj, 'script', 'analysis')
@@ -37,7 +37,10 @@ export async function runAssembly(projectDir, { genScript, outDir, simulator } =
     windowsHide: true,
     encoding: 'utf8',
     cwd: proj,
-    env: { ...process.env, HARNESSAMS_SIMULATOR: simulator || '', PYTHONUTF8: '1' },
+    // extraEnv threads the calling session's identity (DSH_SESSION_ID, see
+    // py.js sessionEnv) to the gen script — its assembly checks resolve the
+    // per-session check table through it (HarnessAMS D-008).
+    env: { ...process.env, HARNESSAMS_SIMULATOR: simulator || '', PYTHONUTF8: '1', ...extraEnv },
   }).catch((e) => { throw new Error(`assembly failed: ${cliError(e)}`) })
   return { ok: true, output: String(stdout || '').trim(), project_dir: proj, simulator }
 }

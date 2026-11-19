@@ -30,3 +30,18 @@ test('spectre: assembly checks — ideal RCL ranges and geometry suffix rules', 
   const stdout = await runPy('tests/spectre_checks_test.py')
   assert.match(stdout, /spectre checks tests ok/)
 })
+
+// Per-session check-params channel (HarnessAMS D-008): exec.agent.id IS the
+// SessionId; the tool shells thread it to Python workers as DSH_SESSION_ID
+// through py.js sessionEnv (empty overlay when the identity is absent —
+// direct server-side calls and tests resolve the project-level fallback).
+import { sessionEnv } from '../src/py.js'
+
+test('spectre: sessionEnv maps the exec agent identity onto DSH_SESSION_ID', () => {
+  const sid = 'session-aaaa1111-2222-3332-4444-555555555555'
+  assert.deepEqual(sessionEnv({ agent: { id: sid } }), { DSH_SESSION_ID: sid })
+  assert.deepEqual(sessionEnv({}), {})
+  assert.deepEqual(sessionEnv(null), {})
+  assert.deepEqual(sessionEnv({ agent: {} }), {})
+  assert.deepEqual(sessionEnv(undefined), {})
+})

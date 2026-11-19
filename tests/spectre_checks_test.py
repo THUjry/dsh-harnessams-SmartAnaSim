@@ -243,6 +243,84 @@ def test_check_params_config():
         shutil.rmtree(scenarios, ignore_errors=True)
 
 
+def test_check_params_session_layer():
+    """Per-session table (D-008): DSH_SESSION_ID -> sessions.json entry
+    check_params overrides the project file per-key; every failure shape
+    (no env, no entry, corrupt sessions.json, off-spec values) falls back
+    to the project layer / defaults, fail-open.
+    """
+    scenarios = tempfile.mkdtemp(prefix="hams-chk-sess-")
+    base = os.getcwd()
+    sid = "session-aaaa1111-2222-3332-4444-555555555555"
+    other = "session-bbbb1111-2222-3332-4444-555555555555"
+    saved_env = {k: os.environ.get(k) for k in ("DSH_SESSION_ID",)}
+    try:
+        def enter(ws_name, project_params=None, sessions=None, raw_sessions=None):
+            ws = Path(scenarios) / ws_name
+            proj = ws / "proj"
+            proj.mkdir(parents=True)
+            (ws / "harnessams.json").write_text("{}", encoding="utf-8")
+            cfg = ws / ".harnessams"
+            cfg.mkdir()
+            if project_params is not None:
+                (cfg / "check_params.json").write_text(json.dumps(project_params), encoding="utf-8")
+            if sessions is not None or raw_sessions is not None:
+                (cfg / "sessions.json").write_text(
+                    raw_sessions if raw_sessions is not None else json.dumps(sessions), encoding="utf-8")
+            os.chdir(proj)
+            common_workspace._check_params_cache.clear()
+
+        t_narrow = "simulator lang=spectre\nR1 (a b) resistor r=0.05\n"  # inside widened, outside default
+
+        # 1. session table widens r beyond BOTH the project file and defaults
+        enter("ws_sess_wide", project_params={"rcl": {"r": [0.1, 1e6]}},
+              sessions={"version": 2, "sessions": {sid: {
+                  "display": "session", "reports": [], "dashboard_selected": None,
+                  "check_params": {"rcl": {"r": [0.01, 1e7]}}}}})
+        os.environ["DSH_SESSION_ID"] = sid
+        assert errors_of(t_narrow) == [], errors_of(t_narrow)
+
+        # 2. same workspace, DIFFERENT session (no own table) -> project layer
+        os.environ["DSH_SESSION_ID"] = other
+        assert any(e.startswith("rcl:") for e in errors_of(t_narrow)), errors_of(t_narrow)
+
+        # 3. partial session table merges per-key (switch rides on top of the
+        #    project r table)
+        enter("ws_sess_partial", project_params={"rcl": {"r": [0.01, 1e7]}},
+              sessions={"version": 2, "sessions": {sid: {
+                  "check_params": {"unit_check": False}}}})
+        os.environ["DSH_SESSION_ID"] = sid
+        assert errors_of(t_narrow) == [], errors_of(t_narrow)
+        t_geo = ("simulator lang=spectre\nparameters w_val=2u\n"
+                 "M1 (d g s b) nmos w=@@w_val@@ l=0.5\n")
+        errs, warns = check_netlist_format(t_geo, parameters={"w_val": ["60"]})
+        assert errs == [] and warns == [], (errs, warns)
+
+        # 4. corrupt sessions.json / off-spec session values -> project layer holds
+        enter("ws_sess_corrupt", project_params={"rcl": {"r": [0.01, 1e7]}},
+              raw_sessions="{not json")
+        os.environ["DSH_SESSION_ID"] = sid
+        assert errors_of(t_narrow) == [], errors_of(t_narrow)
+        enter("ws_sess_offspec", project_params={"rcl": {"r": [0.01, 1e7]}},
+              sessions={"version": 2, "sessions": {sid: {
+                  "check_params": {"rcl": {"r": [9, 9]}}}}})
+        os.environ["DSH_SESSION_ID"] = sid
+        assert errors_of(t_narrow) == [], errors_of(t_narrow)  # bad pair ignored -> project r range
+
+        # 5. no env at all -> project layer
+        del os.environ["DSH_SESSION_ID"]
+        assert errors_of(t_narrow) == [], errors_of(t_narrow)
+    finally:
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        os.chdir(base)
+        common_workspace._check_params_cache.clear()
+        shutil.rmtree(scenarios, ignore_errors=True)
+
+
 def main():
     # Hermetic cwd: the default-behavior tests below must not pick up a real
     # harnessams-workspace sitting above this repo (its check_params.json would
@@ -263,6 +341,7 @@ def main():
         test_rcl_ranges_override()
         test_non_rcl_instances_untouched()
         test_check_params_config()
+        test_check_params_session_layer()
     finally:
         os.chdir(old_cwd)
         common_workspace._check_params_cache.clear()
