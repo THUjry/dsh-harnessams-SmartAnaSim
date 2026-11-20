@@ -10,7 +10,7 @@
 | S-parameter | `snp_guide` (always declared) | local (tools only, no UI) |
 | S-parameter | `snp_read`, `snp_extract` (deferred, guide-gated) | local (tools only, no UI) |
 
-A cluster run reaches these workers through the **top-level plugin's** generic `batch_*` tools: pick the `spectre/spectre_sweep_worker.py` worker (resolved under the workspace `sim_scripts_dir`, which points at this package's `scripts/` tree) and pass its arguments. Nothing here mentions Spectre from the batch side, and the Spectre tools never touch the network.
+A cluster run reaches these workers through the **top-level plugin's** generic `batch_*` tools: pick the `spectre/spectre_sweep_worker.py` worker (resolved under the project's `sim_scripts_dir` — the `workspace_config.json` workspace section, pointing at this package's `scripts/` tree) and pass its arguments. Nothing here mentions Spectre from the batch side, and the Spectre tools never touch the network.
 
 ## Deferred snp loading (guide-gated)
 
@@ -48,19 +48,20 @@ Every script filename carries its family prefix; scripts are plain files spawned
 
 ## Workspace convention
 
-A `harnessams.json` is discovered by walking upward (bare form, or inside `harnessams-workspace/`). Relative values resolve against the config file's directory. Recognized fields:
+The family-level `harnessams.json` walker is retired (2026-11-19 D-009): configuration now lives per project at `<project>/.harnessams/workspace_config.json`, and nothing reads `harnessams.json` anymore. This package's former config consumption:
 
-| Field | Used by |
+| Former field | Now |
 |---|---|
-| `pdk_lib` | Spectre assembly (include-path checks) |
-| `spectre_cmd` | local Spectre worker (falls back to PATH) |
-| `trash_dir`, `plotly_asset`, `remote_python`, `remote_scripts_dir`, `sim_scripts_dir` | consumed by the top-level `dsh-harnessams` plugin's analysis/batch/report tools (this package only supplies the `scripts/` tree that `sim_scripts_dir` points at) |
+| `spectre_cmd` | the `--spectre-cmd` argument > the run's `sweep_config.json` `spectre_cmd` > `PATH` |
+| `pdk_lib` | never consumed here — PDK paths live in assembly-layer configuration only |
+| `sim_scripts_dir` | the project's `workspace_config.json` `workspace.sim_scripts_dir` (consumed by the top-level plugin's batch tools; still points at this package's `scripts/` tree by default) |
+| `trash_dir` / `plotly_asset` / `remote_python` / `remote_scripts_dir` | retired with the family file |
 
 ## Tool family toggles
 
 Each simulator family registers only when its DSH plugin-config switch is not explicitly `false` (all default `true` — the full 6-tool surface, guide included on the snp side). Change the config and cordis hot-swaps the plugin: the fiber restarts and the new selection registers immediately, no reboot.
 
-> DSH (verified on 0.2.1-rc.2; re-checked against 0.2.2-rc.1 sources — the plugin manager still ships no client-side auto-render) does not auto-render a bundle's config: switches appear in the plugin manager only when the bundle ships a browser half registering the `plugins.row.config` slot (key `<package>#<row id>`). This package ships no browser half (deferred), so edit the booleans through the profile config layer; the `Config` export still drives defaults and the hot-swap server-side.
+> DSH (verified on 0.2.1-rc.2, re-checked on 0.2.2-rc.1 sources and live on 0.2.2-rc.3 — the plugin manager still ships no client-side auto-render) does not auto-render a bundle's config: switches appear in the plugin manager only when the bundle ships a browser half registering the `plugins.row.config` slot (key `<package>#<row id>`). This package ships no browser half (deferred), so edit the booleans through the profile config layer; the `Config` export still drives defaults and the hot-swap server-side.
 
 ```json
 {
@@ -100,7 +101,7 @@ Config contract (see `scripts/spectre/spectre_sweep_worker.py`):
 - `output_format` must stay `psfascii` for `spectre_parse` and for the snp_* S-parameter reader.
 - `spectre_parse` turns raw PSF ASCII (`ac.ac`, `dc*.dc`, `tran*.tran`, `*.info`) into per-point JSON with Re/Im pairs plus an index; optional long CSV curves.
 
-`spectre_checks.py` is the assembly-layer library for a project's gen script: `simulator lang=spectre`, forbidden SPICE directives, subckt/ends pairing, `@@PARAM@@` vs sweep parameters, the `template.scs` naming warning, relative include existence, the u/n-suffix geometry rule, and the ideal R/C/L value-range gate (R 0.1..1M ohm, C 1f..1u farad, L 0.1p..10n henry). Workspace defaults (2026-11-10): `common_workspace.read_check_params` reads `.harnessams/check_params.json` (written by the HarnessAMS task tab's check sub-view; nearest directory wins walking up from the gen script's cwd, so both the DSH workspace root and a bare harnessams-workspace placement are found) — it supplies the default R/C/L ranges, the strict-includes switch and the unit_check switch for `check_netlist_format`, and `common_units` consults it for the unit_check/bias_check gates; every failure path falls back to the built-in constants (fail-open).
+`spectre_checks.py` is the assembly-layer library for a project's gen script: `simulator lang=spectre`, forbidden SPICE directives, subckt/ends pairing, `@@PARAM@@` vs sweep parameters, the `template.scs` naming warning, relative include existence, the u/n-suffix geometry rule, and the ideal R/C/L value-range gate (R 0.1..1M ohm, C 1f..1u farad, L 0.1p..10n henry). Workspace defaults (2026-11-10, re-shaped by D-008 2026-11-19): `common_workspace.read_check_params` resolves the effective chain built-in defaults ← `.harnessams/check_params.json` (project fallback) ← the calling session's confirmed table in `.harnessams/sessions.json`, keyed by the shell-env built-in `DSH_SESSION_ID` (injected by the host into every model-run shell and passed through the tool shells via `exec.agent.id`; runs without a session identity fall back to the project layer) — it supplies the default R/C/L ranges, the strict-includes switch and the unit_check switch for `check_netlist_format`, and `common_units` consults it for the unit_check/bias_check gates; every failure path falls back to the built-in constants (fail-open).
 
 ## Cluster runs (through the top-level plugin)
 
