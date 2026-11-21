@@ -1,6 +1,6 @@
 # HarnessAMS-SmartAnaSim
 
-> Simulator plugin: Spectre channel (code-driven netlist assembly with hard PDK isolation) and S-parameter reading/extraction. Simulator-specific code only — the generic remote LSF channel (`batch_*`) and the sweep-result analysis tools (`sim_*`, HTML reports) live in the top-level `HarnessAMS` plugin. npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
+> Simulator plugin: Spectre channel (code-driven netlist assembly with hard PDK isolation) and S-parameter reading/extraction. Simulator-specific code only — the generic remote LSF channel (`batch_*`) and the sweep-result analysis tools (`sim_*`, HTML reports) live in the top-level `HarnessAMS` plugin. It carries no bundled skills — the skill catalog and workflow orchestration belong to the top-level plugin. npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
 
 ## Tool surface (6)
 
