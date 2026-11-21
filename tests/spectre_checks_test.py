@@ -319,6 +319,23 @@ def test_check_params_session_layer():
         shutil.rmtree(scenarios, ignore_errors=True)
 
 
+def test_template_naming_family():
+    """template*.scs family names pass silently (2026-11-21 relaxation).
+
+    Only names outside the family warn now; the exact template.scs requirement
+    moved to the batch uploader's declared-vs-uploaded match.
+    """
+    def naming(name):
+        _, warns = check_netlist_format(GOOD, template_name=name)
+        return [w for w in warns if w.startswith("naming:")]
+
+    assert naming("template.scs") == []
+    assert naming("template_thorough.scs") == []
+    assert naming("some/dir/template_pss.scs") == []
+    assert naming("net.scs"), "outside-family name must still warn"
+    assert naming(None) == []
+
+
 def main():
     # Hermetic cwd: the default-behavior tests below must not pick up a real
     # harnessams-workspace sitting above this repo (its check_params.json would
@@ -340,6 +357,7 @@ def main():
         test_non_rcl_instances_untouched()
         test_check_params_config()
         test_check_params_session_layer()
+        test_template_naming_family()
     finally:
         os.chdir(old_cwd)
         common_workspace._check_params_cache.clear()

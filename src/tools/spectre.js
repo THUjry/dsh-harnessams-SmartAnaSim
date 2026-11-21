@@ -11,7 +11,7 @@ export function spectreTools() {
     {
       name: 'spectre_assemble',
       description: 'Assemble a Spectre sweep batch: runs the project\'s script/analysis/gen_*.py '
-        + '(design_params.json -> Spectre template.scs + sweep_config.json + metadata) with the assembly-layer '
+        + '(design_params.json -> Spectre template*.scs + sweep_config.json + metadata) with the assembly-layer '
         + 'format/placeholder/unit checks. Run this before spectre_run_sweep or batch_submit.',
       parameters: {
         project_dir: { type: 'string', required: true, description: 'Project root containing script/analysis/gen_*.py' },
@@ -30,11 +30,12 @@ export function spectreTools() {
     {
       name: 'spectre_run_sweep',
       description: 'Run a local Spectre batch sweep on the host executing this plugin: for a run directory holding '
-        + 'template.scs + sweep_config.json, generate per-point netlists (@@PARAM@@ substitution) and run Spectre. '
+        + 'a template*.scs netlist (default name template.scs; the name must match sweep_config.netlist_template) '
+        + '+ sweep_config.json, generate per-point netlists (@@PARAM@@ substitution) and run Spectre. '
         + 'Writes NN/netlist.scs, netlist.scs.raw/, spectre.out, point_meta.json and sweep_progress.json. '
         + 'Requires Spectre on this host; cluster runs use the suite\'s batch_submit/batch_poll/batch_fetch.',
       parameters: {
-        run_dir: { type: 'string', required: true, description: 'Run directory holding template.scs and sweep_config.json' },
+        run_dir: { type: 'string', required: true, description: 'Run directory holding a template*.scs netlist and sweep_config.json' },
         max_parallel: { type: 'number', description: 'Concurrency (default: config max_parallel)' },
         timeout_sec: { type: 'number', description: 'Overall tool timeout in seconds (default 1200)' },
         spectre_cmd: { type: 'string', description: 'Spectre executable override (default: sweep_config/workspace/PATH)' },
@@ -52,9 +53,11 @@ export function spectreTools() {
     },
     {
       name: 'spectre_parse',
-      description: 'Parse Spectre psfascii output into curves: one point\'s raw directory (netlist.scs.raw) or a '
-        + 'whole run directory (NN/netlist.scs.raw). Writes per-point JSON with Re/Im pairs plus a summary index '
-        + '(and optional long CSV curves). S-parameter sp.sp files are read by the snp_* tools instead.',
+      description: 'Parse Spectre psfascii output into curves: one point\'s raw directory (netlist.scs.raw), a '
+        + 'whole run directory (NN/netlist.scs.raw), or a standalone S-parameter .sp file. S-parameter sp.sp '
+        + 'sections are flattened to freq + s11..sNN complex curves. Writes per-point JSON with Re/Im pairs plus '
+        + 'a summary index (and optional long CSV curves). For S-parameter matrix CSV dumps and passive-device '
+        + 'parameter extraction use the snp_* tools.',
       parameters: {
         raw_dir: { type: 'string', description: 'One point\'s raw directory (use this OR work_dir)' },
         work_dir: { type: 'string', description: 'Run directory holding NN/netlist.scs.raw (use this OR raw_dir)' },

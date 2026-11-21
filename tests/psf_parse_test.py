@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from spectre import spectre_psf_parse as P  # noqa: E402
 
 DATA = ROOT / "tests" / "data" / "psf" / "point_ac" / "netlist.scs.raw"
+SP_FILE = ROOT / "tests" / "data" / "coupled_ref_01.sp.sp"  # 4-port, 50->150 GHz
 
 
 def approx(actual, expected, tol=1e-12, label=""):
@@ -87,12 +88,52 @@ def test_cli_errors():
     assert P.main(["--work-dir", "does-not-exist"]) == 2
 
 
+def test_sp_directory_flatten():
+    # sp.sp inside a raw directory joins the merged signals: freq + s11..s44
+    # complex curves (delegated to snp_common.parse_psfascii, S > Z > Y).
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = os.path.join(tmp, "netlist.scs.raw")
+        os.makedirs(raw)
+        shutil.copyfile(str(SP_FILE), os.path.join(raw, "sp.sp"))
+        data = P.parse_psf_ascii_directory(raw)
+        assert "freq" in data, sorted(data)
+        expected = ["s%d%d" % (i, j) for i in range(1, 5) for j in range(1, 5)]
+        assert all(k in data for k in expected), sorted(data)
+        assert len(data["freq"]) == 101, len(data["freq"])
+        approx(data["freq"][0], 50e9, label="sp freq0")
+        assert isinstance(data["s21"][0], complex)
+        assert len(data["s21"]) == len(data["freq"])
+        # the flatten merges with the classic analyses present in the same dir
+        for name in ("ac.ac", "dcOp.info"):
+            shutil.copyfile(str(DATA / name), os.path.join(raw, name))
+        merged = P.parse_psf_ascii_directory(raw)
+        assert "ac_VOUT" in merged and "s21" in merged, sorted(merged)
+
+
+def test_cli_raw_dir_sp_file():
+    # --raw-dir may point directly at a standalone .sp file; outputs land in
+    # the given out_dir, point name = filename minus the trailing .sp.
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "psf")
+        rc = P.main(["--raw-dir", str(SP_FILE), "--out-dir", out])
+        assert rc == 0, rc
+        payload = json.load(open(os.path.join(out, "coupled_ref_01.sp_psf.json"),
+                                 encoding="utf-8"))
+        assert payload["point"] == "coupled_ref_01.sp", payload["point"]
+        assert "s11" in payload["signals"] and "freq" in payload["signals"], \
+            sorted(payload["signals"])
+        s11 = payload["signals"]["s11"]
+        assert s11["complex"] is True and len(s11["values"]) == 101, s11
+
+
 def main():
     test_parse_directory()
     test_scalar_signals()
     test_encode_values()
     test_cli_work_dir()
     test_cli_errors()
+    test_sp_directory_flatten()
+    test_cli_raw_dir_sp_file()
     print("psf parser tests ok")
 
 

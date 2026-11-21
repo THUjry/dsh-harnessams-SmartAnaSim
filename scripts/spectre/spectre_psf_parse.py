@@ -6,7 +6,10 @@ Mechanisms (Spectre psfascii output):
 - swept analyses (transient, DC sweep, AC): GROUP -> signal-name mapping, complex
   phasor values, and Spectre's delta compression (later steps only carry changed
   signals; missing values are filled with NaN);
-- non-swept data (DC operating-point ``*.info`` files): name/value scalars.
+- non-swept data (DC operating-point ``*.info`` files): name/value scalars;
+- S-parameter ``sp.sp``: delegated to ``snp.snp_common.parse_psfascii`` (the
+  single S-parameter psfascii parser; kind preference S > Z > Y) and flattened
+  to ``freq`` plus ``s11..sNN`` complex curves.
 
 The parser never reads binary PSF: run Spectre with ``-format psfascii`` (the
 worker's ``output_format`` default) so ``netlist.scs.raw/sp.sp`` and the PSF
@@ -15,6 +18,7 @@ files are plain text.
 CLI:
   python spectre_psf_parse.py --raw-dir <one point raw dir>   [--out-dir DIR]
           [--signals a,b] [--format json|csv]
+          (--raw-dir may also point directly at a standalone .sp file)
   python spectre_psf_parse.py --work-dir <run dir>             [--out-dir DIR]
           [--signals a,b] [--format json|csv]
 
@@ -28,6 +32,16 @@ import math
 import os
 import re
 import sys
+from pathlib import Path
+
+# The scripts tree ships and uploads as one unit (batch.js pluginScripts), so
+# the sibling snp/ package is always resolvable next to this file — the same
+# sys.path convention the sweep worker uses for common./spectre. imports.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+try:
+    from snp.snp_common import parse_psfascii as _snp_parse_psfascii  # noqa: E402
+except ImportError:  # pragma: no cover - a split tree was never a layout
+    _snp_parse_psfascii = None
 
 _MISSING = math.nan
 _SECTIONS = ("HEADER", "TYPE", "SWEEP", "TRACE", "VALUE", "END")
@@ -69,11 +83,34 @@ def parse_psf_ascii_file(path):
     return _parse_psf_ascii_content(content)
 
 
+def _parse_sp_curves(path):
+    """Flatten one Spectre psfascii S-parameter file into curve signals.
+
+    Delegates to snp.snp_common.parse_psfascii (the single sp parser: kind
+    preference S > Z > Y, per-port reference impedances) and flattens the
+    per-frequency NxN matrices into trace-style signals ``s11..sNN`` plus the
+    ``freq`` sweep axis. Returns {} when the file is not parseable sp data.
+    """
+    if _snp_parse_psfascii is None:
+        return {}
+    try:
+        snp = _snp_parse_psfascii(path)
+    except Exception:
+        return {}
+    kind = (snp.param or "S").lower()
+    out = {"freq": list(snp.freq)}
+    for i in range(snp.n_ports):
+        for j in range(snp.n_ports):
+            out["%s%d%d" % (kind, i + 1, j + 1)] = [m[i][j] for m in snp.mats]
+    return out
+
+
 def parse_psf_ascii_directory(raw_dir):
     """Merge every PSF ASCII analysis in one raw directory into {signal: values}.
 
     Transient signals keep their own names, DC signals are prefixed ``dc_``, AC
-    signals ``ac_``, and ``*.info`` scalars are prefixed with the info file stem.
+    signals ``ac_``, S-parameter ``sp.sp`` traces become ``freq`` + ``s11..sNN``
+    complex curves, and ``*.info`` scalars are prefixed with the info file stem.
     """
     if not os.path.isdir(raw_dir):
         return {}
@@ -105,6 +142,10 @@ def parse_psf_ascii_directory(raw_dir):
                 for k, v in data.items():
                     merged["ac_" + k] = v
             break
+
+    sp_path = os.path.join(raw_dir, "sp.sp")
+    if os.path.isfile(sp_path):
+        merged.update(_parse_sp_curves(sp_path))
 
     for name in sorted(os.listdir(raw_dir)):
         if not name.endswith(".info"):
@@ -364,7 +405,8 @@ def _point_names(run_dir):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="parse Spectre psfascii raw output into JSON/CSV curves")
     src = ap.add_mutually_exclusive_group(required=True)
-    src.add_argument("--raw-dir", help="one point's raw output directory (netlist.scs.raw)")
+    src.add_argument("--raw-dir", help="one point's raw output directory (netlist.scs.raw), "
+                                       "or a standalone S-parameter .sp file")
     src.add_argument("--work-dir", help="a run directory holding NN/netlist.scs.raw")
     ap.add_argument("--out-dir", default=None,
                     help="output directory (default: <raw-dir>/psf or <work-dir>/psf)")
@@ -376,6 +418,20 @@ def main(argv=None):
 
     if args.raw_dir:
         raw_dir = os.path.abspath(args.raw_dir)
+        if os.path.isfile(raw_dir) and raw_dir.endswith(".sp"):
+            # A standalone S-parameter file: parse it directly, outputs land
+            # beside the input (the snp_* tools' convention).
+            out_dir = os.path.abspath(args.out_dir) if args.out_dir else os.path.dirname(raw_dir)
+            data = _select_signals(_parse_sp_curves(raw_dir), wanted)
+            if not data:
+                print("no S-parameter data parsed in %s (binary PSF? use output_format=psfascii)"
+                      % raw_dir, file=sys.stderr)
+                return 1
+            point = os.path.basename(raw_dir)[:-len(".sp")] or "point"
+            json_path, csv_path, n = _write_point(point, raw_dir, data, out_dir, args.format)
+            print("[psf] %s: %d signal(s) -> %s%s"
+                  % (point, n, json_path, (" + " + csv_path) if csv_path else ""))
+            return 0
         if not os.path.isdir(raw_dir):
             print("raw dir does not exist: %s" % raw_dir, file=sys.stderr)
             return 2

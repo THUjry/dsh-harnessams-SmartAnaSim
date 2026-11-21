@@ -21,8 +21,8 @@ Checks:
   (m=1e-3, M=1e6); a bare number is the base unit (no metres trap here);
 - relative include/dspf_include files must exist; absolute include paths cannot
   be verified locally (warning unless strict_includes);
-- the uploaded template name should be ``template.scs`` (warning; the batch
-  uploader promotes this to an error).
+- the template name should be a ``template*.scs`` family name (``template.scs``
+  default; warning outside the family).
 
 Workspace defaults (2026-11-10): <workspace>/.harnessams/check_params.json —
 edited from the HarnessAMS task sidebar's check sub-view — supplies the default
@@ -255,9 +255,10 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                                                       token, template_params[token],
                                                       range_text))
 
-    if template_name and os.path.basename(template_name) != "template.scs":
-        warnings.append("naming: netlist_template should be 'template.scs' "
-                        "(the remote batch uploader always names it template.scs)")
+    if template_name and not re.fullmatch(r"template[\w.-]*\.scs",
+                                          os.path.basename(template_name)):
+        warnings.append("naming: netlist_template should be a template*.scs family "
+                        "name (default template.scs) matching the uploaded template file")
 
     for s in stripped:
         m = _INCLUDE.match(s)
