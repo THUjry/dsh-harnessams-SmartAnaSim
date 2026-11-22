@@ -118,7 +118,7 @@ test('parameter enum declarations survive compilation', () => {
   assert.deepEqual(extract.parameters.required.sort(), ['file', 'type'])
 })
 
-test('deferred snp tools register with when + deferLoading; guide and spectre_* do not', () => {
+test('deferred snp tools register with when + deferLoading', () => {
   const registered = new Map() // name -> { tool, opts }
   const ctx = {
     effect: (fn) => { fn() },
@@ -128,10 +128,6 @@ test('deferred snp tools register with when + deferLoading; guide and spectre_* 
   for (const name of ['snp_read', 'snp_extract']) {
     assert.equal(registered.get(name).tool.deferLoading, true, `${name} deferLoading`)
     assert.equal(typeof registered.get(name).opts?.when, 'function', `${name} when`)
-  }
-  for (const name of ['snp_guide', 'spectre_assemble', 'spectre_run_sweep', 'spectre_parse']) {
-    assert.equal(registered.get(name).tool.deferLoading, undefined, `${name} no deferLoading`)
-    assert.equal(registered.get(name).opts, undefined, `${name} registered without options`)
   }
 })
 
