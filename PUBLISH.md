@@ -11,7 +11,7 @@ Checklist for publishing this package to npm. The repository root **is** the pac
 2. Package content check (must-contain AND must-not-contain)
    - `npm pack --dry-run` (run from the repo root, which **is** the package). The tarball
      must contain exactly: `src/` (entry + tool/py/projects/skills modules + `tools/`),
-     `skills/smart-spectre/` (root `SKILL.md` + the five companion pages), `scripts/`
+     `skills/smart-spectre/` (root `SKILL.md` + the seven companion pages), `scripts/`
      (9 `.py`: three `common_*`, three `spectre_*`, three `snp_*`),
      `assets/numfallback.py`, `cordis.patch.yml`, plus the npm auto-included
      `package.json`, `README.md`, `LICENSE`.
@@ -23,8 +23,9 @@ Checklist for publishing this package to npm. The repository root **is** the pac
    - `npm publish` from this directory.
 4. Post-publish verification
    - `dsh plugin --profile web add dsh-harnessams-smart-ana-sim`, restart the profile
-     (`dsh --profile web`), confirm the **4** tools register:
-     `spectre_assemble` and `snp_guide` are always declared; `snp_read` / `snp_extract`
+     (`dsh --profile web`), confirm the **6** tools register:
+     `spectre_assemble`, `gen_vsch_import`, `gen_vsch_export` and `snp_guide` are
+     always declared; `snp_read` / `snp_extract`
      are deferred and appear only after a `snp_guide` call admits them for the session
      (check via a guide call, not the bare declaration list). Also confirm the
      `smart-spectre` skill appears in the session's available-skills catalog.

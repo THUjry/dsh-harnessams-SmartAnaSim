@@ -1,14 +1,16 @@
 # HarnessAMS-SmartAnaSim
 
-> Simulator tools, pure and standalone — Spectre netlist assembly (template generation + configuration checks) and S-parameter reading/extraction. No other plugin is required: the sweep worker and the analysis scripts under `scripts/` run with plain python, and the bundled `smart-spectre` skill documents the whole configuration surface (the HarnessAMS suite drives the same workers through its own managed batch channel, with the workspace `sim_scripts_dir` pointing at this package's `scripts/` tree). npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
+> Simulator tools, pure and standalone — Spectre netlist assembly (template generation + configuration checks), S-parameter reading/extraction, and Virtuoso schematic interaction (command/SKILL-text assembly for the netlist <-> OA round trip). No other plugin is required: the sweep worker and the analysis scripts under `scripts/` run with plain python, and the bundled `smart-spectre` skill documents the whole configuration surface (the HarnessAMS suite drives the same workers through its own managed batch channel, with the workspace `sim_scripts_dir` pointing at this package's `scripts/` tree). npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
 
-## Tool surface (4)
+## Tool surface (6)
 
 | Family | Tool | Runs where |
 |---|---|---|
 | Spectre | `spectre_assemble` | the host executing this plugin (assembly + checks) |
 | S-parameter | `snp_guide` (always declared) | local (tools only, no UI) |
 | S-parameter | `snp_read`, `snp_extract` (deferred, guide-gated) | local (tools only, no UI) |
+| Virtuoso | `gen_vsch_import` | local (assembles ready-to-run command/SKILL text; never executes, no file artifacts) |
+| Virtuoso | `gen_vsch_export` | local (assembles ready-to-run command/SKILL text; never executes, no file artifacts) |
 
 Sweep execution and result parsing are deliberately **script-face, not tools** (2026-11-23 ruling: data processing is not tool-shaped; the managed scan flow lives in the HarnessAMS suite's `batch_*` channel). `spectre_assemble` produces the run directory, then:
 
@@ -17,7 +19,18 @@ python <pkg>/scripts/spectre/spectre_sweep_worker.py --work-dir <run dir> [--max
 python <pkg>/scripts/spectre/spectre_psf_parse.py  --work-dir <run dir> [--format csv]
 ```
 
-run anywhere python exists (the worker needs Spectre on that host). The bundled `smart-spectre` skill carries the full contracts — template rules, the `sweep_config.json` schema, smart timeouts, protocol files, the S-parameter chain, cascade netlist stitching and the PSS variant — as a root page plus named companion pages.
+run anywhere python exists (the worker needs Spectre on that host). The bundled `smart-spectre` skill carries the full contracts — template rules, the `sweep_config.json` schema, smart timeouts, protocol files, the S-parameter chain, cascade netlist stitching, the PSS variant, and the Virtuoso schematic round-trip — as a root page plus named companion pages.
+
+## Virtuoso schematic interaction (`gen_vsch_import` / `gen_vsch_export`)
+
+These two tools assemble ready-to-run TEXT for the netlist <-> OpenAccess round trip and never execute anything or write files — the cds.lib layout, install roots and license hosts are environment-specific, so execution belongs to the caller (the model via its own shell, or the user through a pasted block). Each returns structured schemes to try in order, or one scheme when requested by name:
+
+- `gen_vsch_import` — `param` (spiceIn `-param` parameter file; `+PLACE_ONLY` label connectivity by default), `cli` (standalone spiceIn flags, full place and route, battle-tested), `plain_skill` (self-contained Cadence SKILL text: conn2Sch + symbol + `<cell>_tb`, pasteable into an open CIW).
+- `gen_vsch_export` — `si` (`si -batch -command nl`, needs a one-time CIW-minted si.env), `ocean` (headless with per-run CDS.log isolation, no si.env), `cdlout` (CDL/LVS vocabulary via a SKILL carrier), `plain_skill` (OCEAN/SKILL text for an open CIW — zero startup).
+
+When a headless carrier fails, the skill blocks double as the F1 fallback: paste them verbatim into the user's already-open CIW and have the echo copied back. The recipes and pitfalls (devmap six constructs, termOrder matching, place_only ladder, si.env mint, CDS.log isolation, the CDF parameter-writeback five-step) live in the skill pages `virtuoso-import.md` / `virtuoso-export.md`.
+
+> **Wording rule**: in this repo, "SKILL language" / "SKILL script" always means the Cadence SKILL language (the language itself — not necessarily a file on disk); lowercase `skill` or the bare word means a DSH plugin skill like `smart-spectre`.
 
 ## Deferred snp loading (guide-gated)
 
@@ -37,17 +50,18 @@ run anywhere python exists (the worker needs Spectre on that host). The bundled 
 
 ```
 src/
-  index.js                 entry: registers the 4 tools + the smart-spectre skill
+  index.js                 entry: registers the 6 tools + the smart-spectre skill
   tool.js                  parameter DSL -> valid JSON Schema compiler + validation
   skills.js                bundled-skill registration (resourceBase = the skill dir)
   py.js                    python spawn channel, script paths, error text
   projects.js              project gen_*.py discovery/execution (assembly bridge)
   tools/
-    spectre.js  snp.js
+    spectre.js  snp.js  vsch.js
 skills/
   smart-spectre/           SKILL.md (generic format + index) and the companion
                            pages worker-config / analysis-scripts / s-params /
-                           cascade / pss-variant (the root names every page —
+                           cascade / pss-variant / virtuoso-import /
+                           virtuoso-export (the root names every page —
                            the skill loader does not enumerate the directory)
 scripts/
   common/    common_workspace.py common_units.py common_sweep_engine.py
@@ -72,14 +86,15 @@ The family-level `harnessams.json` walker is retired (2026-11-19 D-004): configu
 
 ## Tool family toggles
 
-Each simulator family registers only when its DSH plugin-config switch is not explicitly `false` (all default `true` — the full 4-tool surface, guide included on the snp side). Change the config and cordis hot-swaps the plugin: the fiber restarts and the new selection registers immediately, no reboot.
+Each family registers only when its DSH plugin-config switch is not explicitly `false` (all default `true` — the full 6-tool surface, guide included on the snp side). Change the config and cordis hot-swaps the plugin: the fiber restarts and the new selection registers immediately, no reboot.
 
 > DSH (verified on 0.2.1-rc.2, re-checked on 0.2.2-rc.1 sources and live on 0.2.2-rc.3 — the plugin manager still ships no client-side auto-render) does not auto-render a bundle's config: switches appear in the plugin manager only when the bundle ships a browser half registering the `plugins.row.config` slot (key `<package>#<row id>`). This package ships no browser half (deferred), so edit the booleans through the profile config layer; the `Config` export still drives defaults and the hot-swap server-side.
 
 ```json
 {
   "spectre": true,
-  "snp": true
+  "snp": true,
+  "vsch": true
 }
 ```
 
@@ -144,7 +159,7 @@ echoes a `port_plan` to confirm. An unphysical result exits 1 with the JSON
 
 ## What the package ships
 
-`src/`, `skills/smart-spectre/` (root page + five companion pages), `scripts/{common,spectre,snp}` (9 `.py`), `assets/numfallback.py`, `cordis.patch.yml`, plus npm auto-included `package.json`, `README.md`, `LICENSE`. Deliberately not shipped: `tests/` (including `tests/data/` and the manual comparison helper) and any Plotly copy. `PUBLISH.md` holds the tarball checks.
+`src/`, `skills/smart-spectre/` (root page + seven companion pages), `scripts/{common,spectre,snp}` (9 `.py`), `assets/numfallback.py`, `cordis.patch.yml`, plus npm auto-included `package.json`, `README.md`, `LICENSE`. Deliberately not shipped: `tests/` (including `tests/data/` and the manual comparison helper) and any Plotly copy. `PUBLISH.md` holds the tarball checks.
 
 ## License
 
