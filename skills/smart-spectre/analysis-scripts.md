@@ -9,7 +9,7 @@ optional (`assets/numfallback.py` is the pure-stdlib fallback), and plain
 
 ```
 python ../scripts/spectre/spectre_psf_parse.py --work-dir <run dir> [--out-dir DIR] [--signals a,b] [--format json|csv]
-python ../scripts/spectre/spectre_psf_parse.py --raw-dir <one point's netlist.scs.raw, or a standalone .sp file> [same options]
+python ../scripts/spectre/spectre_psf_parse.py --raw-dir <one point's netlist.scs.raw> [same options]
 ```
 
 Outputs land in `<target>/psf/` by default: per point `<NN>_psf.json`

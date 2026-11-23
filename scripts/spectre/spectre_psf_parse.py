@@ -18,7 +18,6 @@ files are plain text.
 CLI:
   python spectre_psf_parse.py --raw-dir <one point raw dir>   [--out-dir DIR]
           [--signals a,b] [--format json|csv]
-          (--raw-dir may also point directly at a standalone .sp file)
   python spectre_psf_parse.py --work-dir <run dir>             [--out-dir DIR]
           [--signals a,b] [--format json|csv]
 
@@ -405,8 +404,7 @@ def _point_names(run_dir):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="parse Spectre psfascii raw output into JSON/CSV curves")
     src = ap.add_mutually_exclusive_group(required=True)
-    src.add_argument("--raw-dir", help="one point's raw output directory (netlist.scs.raw), "
-                                       "or a standalone S-parameter .sp file")
+    src.add_argument("--raw-dir", help="one point's raw output directory (netlist.scs.raw)")
     src.add_argument("--work-dir", help="a run directory holding NN/netlist.scs.raw")
     ap.add_argument("--out-dir", default=None,
                     help="output directory (default: <raw-dir>/psf or <work-dir>/psf)")
@@ -418,22 +416,8 @@ def main(argv=None):
 
     if args.raw_dir:
         raw_dir = os.path.abspath(args.raw_dir)
-        if os.path.isfile(raw_dir) and raw_dir.endswith(".sp"):
-            # A standalone S-parameter file: parse it directly, outputs land
-            # beside the input (the snp_* tools' convention).
-            out_dir = os.path.abspath(args.out_dir) if args.out_dir else os.path.dirname(raw_dir)
-            data = _select_signals(_parse_sp_curves(raw_dir), wanted)
-            if not data:
-                print("no S-parameter data parsed in %s (binary PSF? use output_format=psfascii)"
-                      % raw_dir, file=sys.stderr)
-                return 1
-            point = os.path.basename(raw_dir)[:-len(".sp")] or "point"
-            json_path, csv_path, n = _write_point(point, raw_dir, data, out_dir, args.format)
-            print("[psf] %s: %d signal(s) -> %s%s"
-                  % (point, n, json_path, (" + " + csv_path) if csv_path else ""))
-            return 0
         if not os.path.isdir(raw_dir):
-            print("raw dir does not exist: %s" % raw_dir, file=sys.stderr)
+            print("raw dir does not exist or is not a directory: %s" % raw_dir, file=sys.stderr)
             return 2
         out_dir = os.path.abspath(args.out_dir) if args.out_dir else os.path.join(raw_dir, "psf")
         data = _select_signals(parse_psf_ascii_directory(raw_dir), wanted)

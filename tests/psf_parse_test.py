@@ -110,22 +110,6 @@ def test_sp_directory_flatten():
         assert "ac_VOUT" in merged and "s21" in merged, sorted(merged)
 
 
-def test_cli_raw_dir_sp_file():
-    # --raw-dir may point directly at a standalone .sp file; outputs land in
-    # the given out_dir, point name = filename minus the trailing .sp.
-    with tempfile.TemporaryDirectory() as tmp:
-        out = os.path.join(tmp, "psf")
-        rc = P.main(["--raw-dir", str(SP_FILE), "--out-dir", out])
-        assert rc == 0, rc
-        payload = json.load(open(os.path.join(out, "coupled_ref_01.sp_psf.json"),
-                                 encoding="utf-8"))
-        assert payload["point"] == "coupled_ref_01.sp", payload["point"]
-        assert "s11" in payload["signals"] and "freq" in payload["signals"], \
-            sorted(payload["signals"])
-        s11 = payload["signals"]["s11"]
-        assert s11["complex"] is True and len(s11["values"]) == 101, s11
-
-
 def main():
     test_parse_directory()
     test_scalar_signals()
@@ -133,7 +117,6 @@ def main():
     test_cli_work_dir()
     test_cli_errors()
     test_sp_directory_flatten()
-    test_cli_raw_dir_sp_file()
     print("psf parser tests ok")
 
 
