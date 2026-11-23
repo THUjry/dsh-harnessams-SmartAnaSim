@@ -1,9 +1,15 @@
 // Plugin metadata, tool surface, parameter-schema, and family-toggle tests.
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readdirSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { name, inject, apply, toolDefinitions, Config } from '../src/index.js'
 import { compileParameters, makeTool } from '../src/tool.js'
+import { registerSkills } from '../src/skills.js'
+
+const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 const EXPECTED = [
   'snp_extract', 'snp_guide', 'snp_read',
@@ -12,8 +18,32 @@ const EXPECTED = [
 
 test('plugin metadata', () => {
   assert.equal(name, 'dsh-harnessams-smart-ana-sim')
-  assert.deepEqual(inject, ['tools'])
+  assert.deepEqual(inject, ['tools', 'skills'])
   assert.equal(typeof apply, 'function')
+})
+
+test('bundled smart-spectre skill registers with resourceBase and names every companion page', () => {
+  const registered = []
+  const ctx = {
+    effect: (fn) => { fn() },
+    tools: { register: () => {} },
+    skills: { register: (s) => registered.push(s) },
+  }
+  apply(ctx)
+  assert.deepEqual(registered.map((s) => s.name), ['smart-spectre'])
+  const s = registered[0]
+  assert.equal(s.source, 'bundled')
+  assert.equal(s.resourceBase.kind, 'directory')
+  assert.ok(s.description.length > 20 && s.description.length <= 500)
+  assert.ok(s.content.length > 1000, 'root page is the format reference, not a bare stub')
+  // the skill loader does NOT enumerate the directory: every companion .md
+  // must be named in the root SKILL.md or the model can never find it
+  const dir = s.resourceBase.path
+  const root = readFileSync(path.join(dir, 'SKILL.md'), 'utf8')
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'SKILL.md')) {
+    assert.ok(root.includes(`\`${f}\``), `${f} must be named in the root SKILL.md`)
+  }
+  assert.equal(registerSkills({ skills: null }).length, 0, 'fail-open without ctx.skills')
 })
 
 test('apply registers the 6 simulator tools', () => {

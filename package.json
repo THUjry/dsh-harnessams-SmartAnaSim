@@ -1,7 +1,7 @@
 {
   "name": "dsh-harnessams-smart-ana-sim",
   "version": "0.1.0",
-  "description": "HarnessAMS-SmartAnaSim: simulator channels only — Spectre code-driven netlist assembly with checks, local batch sweeps, PSF parsing, and S-parameter reading/extraction (the generic remote batch channel and sweep-result analysis tools live in the top-level dsh-harnessams plugin)",
+  "description": "HarnessAMS-SmartAnaSim: pure simulator tools, usable standalone — Spectre netlist assembly (template generation + config checks) and S-parameter reading/extraction, plus the sweep worker and analysis scripts under scripts/ and the bundled smart-spectre configuration skill",
   "type": "module",
   "icon": "icon.png",
   "main": "src/index.js",
@@ -13,6 +13,7 @@
   "files": [
     "src/",
     "scripts/",
+    "skills/",
     "assets/",
     "icon.png",
     "cordis.patch.yml",
