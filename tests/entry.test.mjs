@@ -12,6 +12,7 @@ import { registerSkills } from '../src/skills.js'
 const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 const EXPECTED = [
+  'gen_vsch_export', 'gen_vsch_import',
   'snp_extract', 'snp_guide', 'snp_read',
   'spectre_assemble',
 ]
@@ -46,7 +47,7 @@ test('bundled smart-spectre skill registers with resourceBase and names every co
   assert.equal(registerSkills({ skills: null }).length, 0, 'fail-open without ctx.skills')
 })
 
-test('apply registers the 4 tools', () => {
+test('apply registers the 6 tools', () => {
   const registered = []
   const ctx = {
     effect: (fn) => { fn() },
@@ -60,7 +61,7 @@ test('Config is a real schemastery schema (cordis resolveConfig requires ~standa
   assert.equal(typeof Config?.['~standard']?.validate, 'function')
   const resolved = Config['~standard'].validate({})
   assert.equal(resolved.issues, undefined)
-  assert.deepEqual(resolved.value, { spectre: true, snp: true })
+  assert.deepEqual(resolved.value, { spectre: true, snp: true, vsch: true })
 })
 
 test('schemastery ships as a runtime dependency (installed bundles do not get devDependencies)', async () => {
@@ -74,9 +75,11 @@ test('family toggles select the registered tool families (only explicit false tr
   const names = (config) => toolDefinitions({}, config).map((d) => d.name).sort()
   assert.deepEqual(names({}), EXPECTED)
   assert.deepEqual(names(undefined), EXPECTED)
-  assert.deepEqual(names({ spectre: false }), ['snp_extract', 'snp_guide', 'snp_read'])
-  assert.deepEqual(names({ snp: false }), ['spectre_assemble'])
-  assert.deepEqual(names({ spectre: false, snp: false }), [])
+  assert.deepEqual(names({ spectre: false }), ['gen_vsch_export', 'gen_vsch_import', 'snp_extract', 'snp_guide', 'snp_read'])
+  assert.deepEqual(names({ snp: false }), ['gen_vsch_export', 'gen_vsch_import', 'spectre_assemble'])
+  assert.deepEqual(names({ vsch: false }), ['snp_extract', 'snp_guide', 'snp_read', 'spectre_assemble'])
+  assert.deepEqual(names({ spectre: false, snp: false }), ['gen_vsch_export', 'gen_vsch_import'])
+  assert.deepEqual(names({ spectre: false, snp: false, vsch: false }), [])
 
   const registered = []
   const ctx = {
@@ -84,12 +87,12 @@ test('family toggles select the registered tool families (only explicit false tr
     tools: { register: (t) => registered.push(t.name) },
   }
   apply(ctx, { snp: false })
-  assert.deepEqual(registered.sort(), ['spectre_assemble'])
+  assert.deepEqual(registered.sort(), ['gen_vsch_export', 'gen_vsch_import', 'spectre_assemble'])
 })
 
 test('every tool compiles to an object-rooted JSON Schema with typed properties', () => {
   const defs = toolDefinitions()
-  assert.equal(defs.length, 4)
+  assert.equal(defs.length, 6)
   for (const def of defs) {
     const tool = makeTool(def)
     assert.equal(tool.parameters.type, 'object', `${def.name} parameters root`)
@@ -131,6 +134,11 @@ test('argument validation runs before execution', async () => {
 
   const read = makeTool(defs.find((d) => d.name === 'snp_read'))
   await assert.rejects(() => read.execute({ file: 7 }), /"file" must be a string/)
+
+  const vschImport = makeTool(defs.find((d) => d.name === 'gen_vsch_import'))
+  await assert.rejects(() => vschImport.execute({}), /missing required property "netlist_file"/)
+  const vschExport = makeTool(defs.find((d) => d.name === 'gen_vsch_export'))
+  await assert.rejects(() => vschExport.execute({ lib: 'x' }), /missing required property "cell"/)
 })
 
 test('parameter enum declarations survive compilation', () => {

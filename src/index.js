@@ -9,6 +9,11 @@
 //                     only snp_guide is always declared; snp_read/snp_extract
 //                     register deferred (deferLoading + when) and enter the
 //                     session via the guide (see src/tools/snp.js)
+//   gen_vsch_*        Virtuoso schematic interaction, command-assembly face:
+//                     gen_vsch_import / gen_vsch_export return ready-to-run
+//                     text blocks (shell + Cadence SKILL) for the netlist <->
+//                     OA round trip and never execute anything (see
+//                     src/tools/vsch.js)
 //
 // Architecture: the plugin is only a channel — tool executes spawn plain Python
 // scripts shipped under scripts/ (assembly/check/adjudication logic lives in the
@@ -25,6 +30,7 @@ import z from '@deepseek-ai/schemastery'
 import { registerTools } from './tool.js'
 import { spectreTools } from './tools/spectre.js'
 import { snpTools } from './tools/snp.js'
+import { vschTools } from './tools/vsch.js'
 import { registerSkills } from './skills.js'
 
 export const name = 'dsh-harnessams-smart-ana-sim'
@@ -32,19 +38,21 @@ export const name = 'dsh-harnessams-smart-ana-sim'
 // undeclared services — optional chaining cannot save that).
 export const inject = ['tools', 'skills']
 
-// DSH-native per-family toggles (official tool-fs precedent): each simulator
-// family registers only when its switch is not explicitly false (defaults keep
+// DSH-native per-family toggles (official tool-fs precedent): each family
+// registers only when its switch is not explicitly false (defaults keep
 // the full 6-tool surface). Changing the config hot-swaps the plugin: cordis
 // restarts the fiber and apply() re-registers with the new selection.
 export const Config = z.object({
   spectre: z.boolean().default(true).description('Register the spectre_* tool family (Spectre sweep-input assembly with checks).'),
   snp: z.boolean().default(true).description('Register the snp_* tool family (Touchstone reading / device extraction).'),
+  vsch: z.boolean().default(true).description('Register the gen_vsch_* tool family (Virtuoso schematic import/export command assembly).'),
 })
 
 export function toolDefinitions(ctx = {}, config = {}) {
   return [
     ...(config.spectre !== false ? spectreTools() : []),
     ...(config.snp !== false ? snpTools() : []),
+    ...(config.vsch !== false ? vschTools() : []),
   ]
 }
 
