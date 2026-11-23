@@ -39,7 +39,7 @@ export async function runAssembly(projectDir, { genScript, outDir, simulator, ex
     cwd: proj,
     // extraEnv threads the calling session's identity (DSH_SESSION_ID, see
     // py.js sessionEnv) to the gen script — its assembly checks resolve the
-    // per-session check table through it (HarnessAMS D-008).
+    // per-session check table through it (HarnessAMS D-004).
     env: { ...process.env, HARNESSAMS_SIMULATOR: simulator || '', PYTHONUTF8: '1', ...extraEnv },
   }).catch((e) => { throw new Error(`assembly failed: ${cliError(e)}`) })
   return { ok: true, output: String(stdout || '').trim(), project_dir: proj, simulator }
