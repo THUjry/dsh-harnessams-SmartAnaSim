@@ -13,7 +13,7 @@ const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 const EXPECTED = [
   'snp_extract', 'snp_guide', 'snp_read',
-  'spectre_assemble', 'spectre_parse', 'spectre_run_sweep',
+  'spectre_assemble',
 ]
 
 test('plugin metadata', () => {
@@ -46,7 +46,7 @@ test('bundled smart-spectre skill registers with resourceBase and names every co
   assert.equal(registerSkills({ skills: null }).length, 0, 'fail-open without ctx.skills')
 })
 
-test('apply registers the 6 simulator tools', () => {
+test('apply registers the 4 tools', () => {
   const registered = []
   const ctx = {
     effect: (fn) => { fn() },
@@ -75,8 +75,7 @@ test('family toggles select the registered tool families (only explicit false tr
   assert.deepEqual(names({}), EXPECTED)
   assert.deepEqual(names(undefined), EXPECTED)
   assert.deepEqual(names({ spectre: false }), ['snp_extract', 'snp_guide', 'snp_read'])
-  assert.deepEqual(names({ snp: false }),
-    ['spectre_assemble', 'spectre_parse', 'spectre_run_sweep'])
+  assert.deepEqual(names({ snp: false }), ['spectre_assemble'])
   assert.deepEqual(names({ spectre: false, snp: false }), [])
 
   const registered = []
@@ -85,12 +84,12 @@ test('family toggles select the registered tool families (only explicit false tr
     tools: { register: (t) => registered.push(t.name) },
   }
   apply(ctx, { snp: false })
-  assert.deepEqual(registered.sort(), ['spectre_assemble', 'spectre_parse', 'spectre_run_sweep'])
+  assert.deepEqual(registered.sort(), ['spectre_assemble'])
 })
 
 test('every tool compiles to an object-rooted JSON Schema with typed properties', () => {
   const defs = toolDefinitions()
-  assert.equal(defs.length, 6)
+  assert.equal(defs.length, 4)
   for (const def of defs) {
     const tool = makeTool(def)
     assert.equal(tool.parameters.type, 'object', `${def.name} parameters root`)
@@ -129,12 +128,6 @@ test('argument validation runs before execution', async () => {
   const defs = toolDefinitions()
   const assembly = makeTool(defs.find((d) => d.name === 'spectre_assemble'))
   await assert.rejects(() => assembly.execute({}), /missing required property "project_dir"/)
-
-  const sweep = makeTool(defs.find((d) => d.name === 'spectre_run_sweep'))
-  await assert.rejects(() => sweep.execute({ run_dir: 5 }), /"run_dir" must be a string/)
-
-  const parse = makeTool(defs.find((d) => d.name === 'spectre_parse'))
-  await assert.rejects(() => parse.execute({ raw_dir: 5 }), /"raw_dir" must be a string/)
 
   const read = makeTool(defs.find((d) => d.name === 'snp_read'))
   await assert.rejects(() => read.execute({ file: 7 }), /"file" must be a string/)

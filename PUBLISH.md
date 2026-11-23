@@ -10,8 +10,8 @@ Checklist for publishing this package to npm. The repository root **is** the pac
      top-level `HarnessAMS` repo (`docs/compatibility.md`).
 2. Package content check (must-contain AND must-not-contain)
    - `npm pack --dry-run` (run from the repo root, which **is** the package). The tarball
-     must contain exactly: `src/` (entry + tool/py/projects modules + `tools/` — no
-     batch/remote/shared, they moved to `dsh-harnessams`), `scripts/`
+     must contain exactly: `src/` (entry + tool/py/projects/skills modules + `tools/`),
+     `skills/smart-spectre/` (root `SKILL.md` + the five companion pages), `scripts/`
      (9 `.py`: three `common_*`, three `spectre_*`, three `snp_*`),
      `assets/numfallback.py`, `cordis.patch.yml`, plus the npm auto-included
      `package.json`, `README.md`, `LICENSE`.
@@ -23,18 +23,16 @@ Checklist for publishing this package to npm. The repository root **is** the pac
    - `npm publish` from this directory.
 4. Post-publish verification
    - `dsh plugin --profile web add dsh-harnessams-smart-ana-sim`, restart the profile
-     (`dsh --profile web`), confirm the **6** tools register:
-     `spectre_assemble`, `spectre_run_sweep`, `spectre_parse`, `snp_guide` are always
-     declared; `snp_read` / `snp_extract` are deferred and appear only after a
-     `snp_guide` call admits them for the session (check via a guide call, not the
-     bare declaration list).
-   - Spectre smoke: on a host with Spectre, run a two-point psfascii sweep and
-     `spectre_parse`; then verify the top-level plugin's
-     `batch_submit`/`batch_poll`/`batch_fetch` against a machine whose remote project has
-     a live session (worker resolved under the workspace `sim_scripts_dir`; default
-     includes plus `*/netlist.scs.raw/sp.sp`), and compare foreground vs batch with
-     `tests/manual/compare_spectre_runs.py` (the archive is kept as `fetch_<job>.tgz`;
-     `bjobs` "No job found" with all point metas means completed).
+     (`dsh --profile web`), confirm the **4** tools register:
+     `spectre_assemble` and `snp_guide` are always declared; `snp_read` / `snp_extract`
+     are deferred and appear only after a `snp_guide` call admits them for the session
+     (check via a guide call, not the bare declaration list). Also confirm the
+     `smart-spectre` skill appears in the session's available-skills catalog.
+   - Spectre smoke: on a host with Spectre, run `spectre_assemble` on a project with a
+     `gen_*.py`, then execute `scripts/spectre/spectre_sweep_worker.py` on the generated
+     run directory (2+ points, psfascii) and parse it with
+     `scripts/spectre/spectre_psf_parse.py`; `snp_read` -> `snp_extract` on a resulting
+     `sp.sp` exercises the S-parameter chain.
 5. Aggregate bundle
    - Only after **both** plugin packages are published: bump and publish
      `dsh-harnessams-suite` from the top-level `HarnessAMS` repo (it pins the exact

@@ -34,9 +34,9 @@ import re
 import sys
 from pathlib import Path
 
-# The scripts tree ships and uploads as one unit (batch.js pluginScripts), so
-# the sibling snp/ package is always resolvable next to this file — the same
-# sys.path convention the sweep worker uses for common./spectre. imports.
+# The scripts tree ships and travels as one unit, so the sibling snp/ package
+# is always resolvable next to this file — the same sys.path convention the
+# sweep worker uses for common./spectre. imports.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 try:
     from snp.snp_common import parse_psfascii as _snp_parse_psfascii  # noqa: E402

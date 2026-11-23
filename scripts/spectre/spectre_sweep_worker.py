@@ -2,9 +2,9 @@
 """HarnessAMS local Spectre batch sweep worker.
 
 Runs Spectre point-by-point on the host that executes this script (a Linux
-simulation host, or a Windows host with Spectre on PATH). It is NOT coupled to
-any remote channel: use the generic batch tools to submit this script to an LSF
-queue when Spectre lives on a cluster login/compute node.
+simulation host, or a Windows host with Spectre on PATH). It is NOT coupled
+to any scheduler or channel: run it directly, or submit it to whatever
+batch system the host provides.
 
 Mechanisms (via scripts/common/common_sweep_engine.py):
 - @@PARAM@@ template substitution and combination generation;
