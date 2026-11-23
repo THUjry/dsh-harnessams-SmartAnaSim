@@ -243,7 +243,7 @@ def test_check_params_config():
 
 
 def test_check_params_session_layer():
-    """Per-session table (D-004): DSH_SESSION_ID -> sessions.json entry
+    """Per-session table (D-005): DSH_SESSION_ID -> sessions.json entry
     check_params overrides the project file per-key; every failure shape
     (no env, no entry, corrupt sessions.json, off-spec values) falls back
     to the project layer / defaults, fail-open.

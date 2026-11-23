@@ -31,7 +31,7 @@ test('spectre: assembly checks — ideal RCL ranges and geometry suffix rules', 
   assert.match(stdout, /spectre checks tests ok/)
 })
 
-// Per-session check-params channel (HarnessAMS D-004): exec.agent.id IS the
+// Per-session check-params channel (HarnessAMS D-005): exec.agent.id IS the
 // SessionId; the tool shells thread it to Python workers as DSH_SESSION_ID
 // through py.js sessionEnv (empty overlay when the identity is absent —
 // direct server-side calls and tests resolve the project-level fallback).

@@ -51,7 +51,7 @@ export function readJsonIfExists(file) {
   }
 }
 
-// Per-session env overlay for Python workers (HarnessAMS D-004): exec.agent.id
+// Per-session env overlay for Python workers (HarnessAMS D-005): exec.agent.id
 // IS the calling session's id, and common_workspace.read_check_params resolves
 // the calling session's confirmed check table through DSH_SESSION_ID. Absent
 // identity (direct server-side calls, tests) returns an empty overlay — the
