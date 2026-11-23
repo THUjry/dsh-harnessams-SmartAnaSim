@@ -35,12 +35,20 @@ async function synth(kind, name) {
   return { dir, file, info: JSON.parse(stdout) }
 }
 
+async function toCsv(file, param = 'Z') {
+  // snp_extract accepts params CSVs only: convert raw fixtures through the
+  // reader — the documented user chain (snp_read first, then snp_extract).
+  const r = await readSnp(file, param)
+  return path.join(r.dir, `${r.stem}_params_${param}.csv`)
+}
+
 async function extract(file, type, args = [], env = {}) {
+  const input = file.endsWith('.csv') ? file : await toCsv(file)
   const out = tmp()
-  const argv = [EXTRACT, '--file', file, '--type', type, '--out-dir', out, ...args]
+  const argv = [EXTRACT, '--file', input, '--type', type, '--out-dir', out, ...args]
   const { stdout } = await execFileAsync('python', ['-B', ...argv],
     { timeout: 300_000, env: { ...process.env, ...env } })
-  const stem = path.basename(file).replace(/\.[^.]+$/, '')
+  const stem = path.basename(input).replace(/\.[^.]+$/, '')
   const j = JSON.parse(readFileSync(path.join(out, `${stem}_extract_${type}.json`), 'utf8'))
   return { j, stdout, out }
 }
@@ -71,27 +79,33 @@ function approxXfmr(j, label = '') {
 
 const GHz = 1e9
 
-test('input rejection: nan tokens, non-positive length, non-finite freq (exit 2)', async () => {
+test('input rejection: non-CSV input, nan tokens, bad options (exit 2)', async () => {
   const dir = tmp()
-  const bad = path.join(dir, 'nan.s2p')
-  writeFileSync(bad, '# HZ MA R 50\n1.0e9 nan 0 0 0 0 0 0 0\n')
   const run = (args) => execFileAsync('python', ['-B', EXTRACT, ...args],
     { timeout: 120_000 }).then(() => null, (e) => e)
+  // raw .sNp / sp.sp inputs are rejected with a convert-first hint
+  const { file: good } = await synth('ind1', 'ind_ok.s2p')
+  const e0 = await run(['--file', good, '--type', 'inductor', '--coil', '1', '--out-dir', tmp()])
+  assert.equal(e0.code, 2, 'non-CSV input must exit 2')
+  assert.match(e0.stderr, /snp_read/)
+  // non-finite tokens inside a params CSV
+  const bad = path.join(dir, 'nan.csv')
+  writeFileSync(bad, '# snp_read params dump v1\n# param=Z\n# n_ports=1\nfreq_hz,i,j,re,im\n1.0e9,1,1,nan,0\n')
   const e1 = await run(['--file', bad, '--type', 'inductor', '--coil', '1', '--out-dir', dir])
   assert.equal(e1.code, 2, 'nan token must exit 2')
   assert.match(e1.stderr, /non-finite/)
-  const { file: good } = await synth('ind1', 'ind_ok.s2p')
-  const e2 = await run(['--file', good, '--type', 'inductor', '--coil', '1',
+  const csv = await toCsv(good)
+  const e2 = await run(['--file', csv, '--type', 'inductor', '--coil', '1',
     '--length-m', '-0.5', '--out-dir', tmp()])
   assert.equal(e2.code, 2, 'negative length must exit 2')
   assert.match(e2.stderr, /--length-m/)
-  const e3 = await run(['--file', good, '--type', 'inductor', '--coil', '1',
+  const e3 = await run(['--file', csv, '--type', 'inductor', '--coil', '1',
     '--freq-hz', 'nan', '--out-dir', tmp()])
   assert.equal(e3.code, 2, 'nan freq must exit 2')
   assert.match(e3.stderr, /--freq-hz/)
 })
 
-test('tl: ideal 2-port line (touchstone + Z-params CSV agree)', async () => {
+test('tl: ideal 2-port line (S- and Z-kind params CSVs agree)', async () => {
   const s = await synth('tl2', 'tl2.s2p')
   const { j } = await extract(s.file, 'tl', ['--freq-hz', '10e9', '--length-m', '2e-3'])
   approx(j.summary.Zc_ohm.re, 75, 0.5, 'Zc.re')
@@ -99,11 +113,11 @@ test('tl: ideal 2-port line (touchstone + Z-params CSV agree)', async () => {
   const thetaExp = 360 * j.freq_hz * 2e-3 * 1.5 / 299792458.0
   approx(j.summary.theta_deg, thetaExp, 0.2, 'theta')
   approx(j.summary.eps_eff, 2.25, 0.01, 'eps_eff')
-  // same numbers from the Z-kind params CSV (conversion cross-check)
-  const { j: j2 } = await extract(path.join(s.dir, 'tl2_Z.csv'), 'tl',
+  // the S-kind CSV converts through to_z internally — same numbers
+  const { j: j2 } = await extract(await toCsv(s.file, 'S'), 'tl',
     ['--freq-hz', '10e9', '--length-m', '2e-3'])
-  approx(j2.summary.Zc_ohm.re, 75, 0.5, 'Zc.re (csv)')
-  approx(j2.summary.theta_deg, thetaExp, 0.2, 'theta (csv)')
+  approx(j2.summary.Zc_ohm.re, 75, 0.5, 'Zc.re (S-kind csv)')
+  approx(j2.summary.theta_deg, thetaExp, 0.2, 'theta (S-kind csv)')
 })
 
 test('tl: 4-port differential line (default pairing; scrambled pairing auto-fixed)', async () => {
@@ -249,16 +263,6 @@ test('real data: anonymized 5-port file parses (snp_read)', async () => {
   assert.ok(j.reciprocity_error < 1e-10, 'reciprocal EM data')
 })
 
-test('round trip: snp_read CSV feeds snp_extract', async () => {
-  const s = await synth('xfmr2', 'x.s2p')
-  const r = await readSnp(s.file, 'Z')
-  const direct = await extract(s.file, 'transformer', ['--freq-hz', '2e9'])
-  const viaCsv = await extract(path.join(r.dir, `${r.stem}_params_Z.csv`), 'transformer',
-    ['--freq-hz', '2e9'])
-  approx(viaCsv.j.summary.L1_H, direct.j.summary.L1_H, 1e-15, 'L1 via CSV')
-  approx(viaCsv.j.summary.k, direct.j.summary.k, 1e-12, 'k via CSV')
-})
-
 test('psfascii: S-param and Y/Z-param files parse to the same device', async () => {
   const ss = await synth('psf_s', 'p_s.sp.sp')
   const sz = await synth('psf_yz', 'p_yz.sp.sp')
@@ -330,7 +334,8 @@ test('tool face: unphysical snp_extract (exit 1) returns ok=false WITH summary/p
   // snp_extract.py writes the JSON and exits 1 by contract; the tool must
   // surface the structured diagnosis instead of throwing it away.
   const s = await synth('tl2', 'tl2.s2p')
-  const res = await snpTools().find((d) => d.name === 'snp_extract').execute({ file: s.file, type: 'transformer' })
+  const res = await snpTools().find((d) => d.name === 'snp_extract')
+    .execute({ file: await toCsv(s.file), type: 'transformer' })
   assert.equal(res.ok, false)
   assert.ok(res.port_plan, 'port_plan must survive the unphysical exit')
   assert.ok(res.summary, 'summary must survive the unphysical exit')
@@ -338,7 +343,7 @@ test('tool face: unphysical snp_extract (exit 1) returns ok=false WITH summary/p
 })
 
 test('tool face: snp_extract with no JSON on failure still throws', async () => {
-  const missing = path.join(tmpdir(), `definitely-missing-${Date.now()}.s2p`)
+  const missing = path.join(tmpdir(), `definitely-missing-${Date.now()}.csv`)
   await assert.rejects(() => snpTools().find((d) => d.name === 'snp_extract').execute({ file: missing, type: 'tl' }),
     /snp_extract failed/)
 })

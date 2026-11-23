@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """snp_extract.py -- extract device model parameters from an S-parameter file.
 
-Input: Touchstone .s1p..sNp, Spectre psfascii sp output, or a params CSV
-written by snp_read.py (auto-detected). Everything is reduced to Z-parameters
-first (per-port reference impedances honored), then per --type:
+Input: a params CSV written by snp_read.py (convert Touchstone .s1p..sNp or
+Spectre psfascii sp output with snp_read first). Everything is reduced to
+Z-parameters first (per-port reference impedances honored), then per --type:
 
   transformer (2/3/4/5/6 ports)
       L1 = Im(Z11)/w, L2 = Im(Z22)/w, Q1 = Im(Z11)/Re(Z11), Q2 likewise,
@@ -73,7 +73,7 @@ transformer/inductor ranked by L1+L2 / L after passing) and the best plan is
 adopted, with every scored candidate reported in the JSON.
 
 Usage:
-    python snp_extract.py --file <path> --type <tl|coupled_tl|transformer|inductor>
+    python snp_extract.py --file <params CSV from snp_read> --type <tl|coupled_tl|transformer|inductor>
         [--freq-hz F] [--coil1 1,2] [--coil2 3,4] [--coil 1,2] [--ct1 5] [--ct2 6]
         [--ct 3] [--se 2,4] [--length-m L] [--theory-gate G] [--out-dir DIR]
 
@@ -806,8 +806,13 @@ def main(argv=None):
               % args.length_m, file=sys.stderr)
         return 2
 
+    if not re.search(r"\.csv$", Path(args.file).name.lower()):
+        print("[snp] error: --file must be a params CSV written by snp_read.py "
+              "(got %s) -- convert .sNp / psfascii sp.sp inputs with snp_read "
+              "first" % Path(args.file).name, file=sys.stderr)
+        return 2
     try:
-        data = sc.load_any(args.file)
+        data = sc.parse_params_csv(args.file)
         zd = sc.to_z(data)
     except sc.SnpError as e:
         print("[snp] error: %s" % e, file=sys.stderr)

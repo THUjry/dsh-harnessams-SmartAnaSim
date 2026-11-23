@@ -411,7 +411,11 @@ def write_params_csv(data, out_path):
         for i in range(n):
             for j in range(n):
                 v = m[i][j]
-                lines.append("%.10e,%d,%d,%.12e,%.12e" % (f, i + 1, j + 1, v.real, v.imag))
+                # %.17g keeps the round trip bit-exact: this CSV is the sole
+                # input channel of snp_extract, and 12 digits perturbed the
+                # noise-level imaginary parts enough to flip the coupled_tl
+                # eigenvalue branch selection (and with it the auto port search)
+                lines.append("%.17g,%d,%d,%.17g,%.17g" % (f, i + 1, j + 1, v.real, v.imag))
     # utf-8: the '# source=' header embeds the input file's absolute path,
     # which is non-ASCII on a zh-CN Windows workspace (ascii raised
     # UnicodeEncodeError after the dump itself had already succeeded).
@@ -443,8 +447,11 @@ def parse_params_csv(path):
             parts = s.split(",")
             if len(parts) != 5:
                 raise SnpError("bad params CSV row in %s: %r" % (path, s))
-            rows.append((float(parts[0]), int(parts[1]) - 1, int(parts[2]) - 1,
-                         float(parts[3]), float(parts[4])))
+            row = (float(parts[0]), int(parts[1]) - 1, int(parts[2]) - 1,
+                   float(parts[3]), float(parts[4]))
+            if not all(math.isfinite(v) for v in (row[0], row[3], row[4])):
+                raise SnpError("non-finite value in params CSV %s: %r" % (path, s))
+            rows.append(row)
     if "param" not in meta or "n_ports" not in meta:
         raise SnpError("params CSV %s lacks metadata header (not written by snp_read?)" % path)
     n = int(meta["n_ports"])

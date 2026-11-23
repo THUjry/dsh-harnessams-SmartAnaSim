@@ -28,10 +28,11 @@ const SNP_FLOW_DOC = 'S-parameter tools active for this session (snp_read, snp_e
   + '1. snp_read {file} — parse a Touchstone .s1p..sNp, Spectre psfascii sp.sp or a\n'
   + '   params CSV; writes <stem>_params_<P>.csv plus a <stem>_read.json summary\n'
   + '   (band statistics, reciprocity diagnostic, max |Sij|).\n'
-  + '2. snp_extract {file, type} — passive-device parameters; type is tl |\n'
-  + '   coupled_tl | transformer | inductor. An unphysical result returns\n'
-  + '   ok=false WITH summary/port_plan — that is a structured diagnosis, not a\n'
-  + '   failure: inspect port_plan and the physicality reasons before retrying.\n'
+  + '2. snp_extract {file, type} — passive-device parameters from the params CSV\n'
+  + '   step 1 wrote (the only accepted input; type is tl | coupled_tl |\n'
+  + '   transformer | inductor). An unphysical result returns ok=false WITH\n'
+  + '   summary/port_plan — that is a structured diagnosis, not a failure:\n'
+  + '   inspect port_plan and the physicality reasons before retrying.\n'
   + '\n'
   + 'Outputs land beside the input file unless out_dir is given; every write\n'
   + 'prints a "[snp] wrote <path>" line.'
@@ -112,7 +113,8 @@ export function snpTools() {
       name: 'snp_extract',
       deferLoading: true,
       when: ({ agent }) => !!agent?.id && snpActivated.has(agent.id),
-      description: 'Extract passive-device parameters from an S-parameter file (same input formats as snp_read). '
+      description: 'Extract passive-device parameters from a params CSV written by snp_read (convert '
+        + '.sNp / psfascii sp.sp inputs with snp_read first — snp_extract rejects them directly). '
         + 'Types: transformer (L1/L2/Q1/Q2/k, two SRFs, Gmax; 2/3/4/5/6 ports), inductor (L/Q/SRF; 1/2/3 ports), '
         + 'tl (Zc/gamma*l/theta, optional eps_eff/alpha via length_m; 2 ports or 4-port differential), coupled_tl '
         + '(even/odd modal Z0e/Z0o/theta/k + theory_ok; 4 ports or 8-port differential). A side listed with one '
@@ -122,7 +124,7 @@ export function snpTools() {
         + 'An unphysical result returns ok=false WITH summary/port_plan (the JSON is written even on the '
         + 'unphysical exit) — inspect port_plan and the physicality reasons before retrying.',
       parameters: {
-        file: { type: 'string', required: true, description: 'Input file path (.sNp / sp.sp / params CSV)' },
+        file: { type: 'string', required: true, description: 'Params CSV path (the snp_read product)' },
         type: { type: 'string', required: true, enum: ['tl', 'coupled_tl', 'transformer', 'inductor'],
           description: 'tl | coupled_tl | transformer | inductor' },
         freq_hz: { type: 'number', description: 'Extraction frequency in Hz (default: band geometric midpoint)' },
