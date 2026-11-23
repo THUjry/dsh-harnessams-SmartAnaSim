@@ -3,10 +3,11 @@ name: smart-spectre
 description: >
   Spectre configuration reference: the template*.scs netlist format with
   @@PARAM@@ placeholders, the sweep_config.json contract, the assembly layer
-  (spectre_assemble + the project's gen_*.py) with its check chain, and an
-  index of companion pages (sweep worker, analysis scripts, S-parameters,
-  cascade stitching, PSS variant). Trigger on spectre netlist format, sweep
-  configuration, or running the bundled scripts directly.
+  (spectre_assemble + the project's gen_*.py) with its check chain, the
+  Virtuoso schematic round-trip (gen_vsch_import / gen_vsch_export recipes,
+  spiceIn / si / ocean pitfalls), and an index of companion pages. Trigger
+  on spectre netlist format, sweep configuration, Virtuoso schematic
+  import/export, or running the bundled scripts directly.
 ---
 
 # smart-spectre — Spectre configuration reference
@@ -30,6 +31,12 @@ pages — read the one you need, on demand:
   at the netlist level (subckt wrapping, control-word sweep order)
 - `pss-variant.md` — the PSS / IP1dB sweep variant (`template_thorough.scs`)
   and its two mandatory pitfalls
+- `virtuoso-import.md` — netlist -> OA: spiceIn recipes (devmap six
+  constructs, termOrder, place_only ladder), symbol + `<cell>_tb`
+  generation, the CDF parameter-writeback five-step, F2 re-import
+- `virtuoso-export.md` — .oa -> netlist: si / ocean / cdlOut / plain-SKILL
+  routes, the tune-writeback-diff round trip, ocean batching with per-run
+  CDS.log isolation
 
 ## Template rules
 
@@ -112,3 +119,49 @@ S-parameter analyses), `spectre.out`, `point_meta.json`. Run-directory
 level: `sweep_progress.json` (rewritten every ~30 s and at the end),
 `.worker_started`, `.compute_node`, `.simulator`, `errlog.txt`. The full
 schema, defaults and timeout mechanics: `worker-config.md`.
+
+## Virtuoso schematic round-trip
+
+The `gen_vsch_*` tools assemble ready-to-run text for the netlist <->
+OpenAccess round trip (they never execute anything and write no files —
+cds.lib layouts and install roots are environment-specific, so execution
+belongs to the caller; every scheme also carries a `plain_skill` variant:
+self-contained Cadence SKILL text pasteable into an open CIW). Workflow
+charter:
+
+| Phase | Who / what | What happens |
+|---|---|---|
+| 1 | human + export tool | draw the schematic and hand the cell path over; export the netlist headlessly (ocean). For a process never run before: run one minimal no-parameter simulation first and hand its run_dir/log over — that configures the required model sections and simulation setup (afterwards learnable from past projects) |
+| 2 | agent | build the testbench and tune at the NETLIST level; get results |
+| 3 | tool | display results as HTML |
+| 4 | SKILL text | back-annotate device/net names and key parameters into the schematic and form the tb (plain_skill schemes + the writeback recipe in `virtuoso-import.md`) |
+| 5 | human | finalize and configure the final tb manually; run it and double-align against the pre-import design: netlist AND simulation results |
+
+Division of labor: agent-orchestrated where flexibility is needed,
+tool-constrained where strictness is needed. Model sections and simulator
+setup come ONLY from the include lines of user-provided simulation logs
+(`input.scs` / run_dir artifacts) — never from browsing PDK or
+model-library directories.
+
+Tool surface (IC618-verified) — lightweight CLI first:
+
+| Tool | Direction | Note |
+|---|---|---|
+| `si` | schematic -> netlist | batch translator, no GUI, no Maestro; first choice for export and validation re-exports |
+| `spiceIn` | netlist -> schematic | independent binary; the F2 re-import channel |
+| `virtuoso -nograph -execute` | SKILL carrier | parameter writeback's first-choice carrier (slow start, self-contained log, no interlock) |
+| `ocean -restore` | SKILL carrier / export | writeback alternate carrier; `createNetlist` is the si.env-free export (log isolation required — see `virtuoso-export.md`) |
+| `cdlOut` (SKILL function) | schematic -> CDL | LVS/CDL vocabulary only; rides one of the two carriers |
+
+(`spiceOut` does not exist — the installation's `spice*` set is `spiceIn`
+alone.) Hard boundary: Cadence has no SKILL interpreter independent of a
+Virtuoso process — parameter writeback is the only round-trip step that
+cannot stay on a lightweight CLI.
+
+Fallback ladder when the background carrier fails: **F1** = hand the
+self-contained SKILL block to the user for their already-open CIW (zero
+new startup cost; they paste the printed echo back); **F2** = re-import
+the tuned netlist as `<cell>_tuned` through spiceIn (all-CLI; ASG-placed
+graphics, connectivity and parameters guaranteed by the netlist itself).
+
+Deep recipes and pitfalls: `virtuoso-import.md` / `virtuoso-export.md`.
