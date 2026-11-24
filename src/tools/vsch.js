@@ -265,8 +265,9 @@ function exportSiScheme(args) {
   ].join('\n')
   const mint = [
     ';; one-time si.env mint (needs a live CIW; the file is static text afterwards,',
-    ';; reusable for the same lib/cell/view/simulator combo — hand-writing the fields',
-    ';; is unverified, do not improvise them):',
+    ';; reusable for the same lib/cell/view/simulator combo. Hand-writing the shared',
+    ';; field family is now verified live — via the auCdl route, see the cdlout',
+    ';; scheme; a mint or a known-good template remains the safest source):',
     `simInitEnvWithArgs("${runDir}" "${lib}" "${cell}" "${view}" "spectre" nil)`,
   ].join('\n')
   return scheme(
@@ -380,52 +381,49 @@ function exportCdloutScheme(args) {
   const cell = ph(args.cell, '<cell>')
   const view = ph(args.view, 'schematic')
   const runDir = ph(args.run_dir, '<run_dir>')
-  const skill = [
-    ';; CDL/LVS-vocabulary export (auCdl). cdlOut is a SKILL function, not a',
-    ';; standalone binary — it must run inside a Virtuoso process (open CIW, or',
-    ';; the headless stdin carrier in the shell block below). The argument list',
-    ';; follows the Cadence auCdl SKILL reference; verify it in your install',
-    ';; before the first real run.',
-    'let( (rc)',
-    `  rc = errset(progn(`,
-    `    cdlOut("${lib}" "${cell}" "${view}" "${runDir}/${cell}.cdl")`,
-    '  ))',
-    `  printf("cdlOut ${lib}/${cell}: %s\\n" if(rc "done" "FAILED"))`,
-    '  unless(rc error("cdlOut failed — see messages above"))',
-    ')',
-  ].join('\n')
   const shell = [
-    '# carrier for the SKILL block above (IC618-verified shape: virtuoso -nograph',
-    '# has no -execute flag — feed the script through stdin). The heredoc embeds',
-    '# the same block plus the headless-only exit() tail, so this paste is',
-    '# self-contained:',
-    `cat > cdl_out.il <<'EOF'`,
-    skill,
-    'exit()',
+    '# CDL/LVS-vocabulary export as a lightweight CLI (verified live, IC618): the',
+    '# si batch translator with a hand-built si.env whose simulator is auCdl — full',
+    '# device coverage, no Virtuoso process, seconds to run.',
+    `mkdir -p ${runDir} && cd ${runDir}`,
+    'cat > si.env <<\'EOF\'',
+    `simLibName = "${lib}"`,
+    `simCellName = "${cell}"`,
+    `simViewName = "${view}"`,
+    `simRunDir = "${runDir}"`,
+    'simSimulator = "auCdl"',
+    `hnlNetlistFileName = "${cell}.cdl"`,
+    'simViewList = \'("auCdl" "schematic" "symbol")',
+    'simStopList = \'("auCdl")',
+    'simNetlistHier = t',
     'EOF',
-    'timeout -s KILL 300s virtuoso -nograph -log cdl_out.log < cdl_out.il > cdl_out.out 2>&1',
-    'tail -5 cdl_out.out',
-    '# success = the "cdlOut ...: done" marker in cdl_out.out — NOT the exit code',
-    '# (rc 137 after the markers = the KILL landed past a broken-init ">" prompt).',
+    'si -batch -cdslib <cds.lib> -command netlist',
+    `# product: ${runDir}/${cell}.cdl`,
   ].join('\n')
   return scheme(
     'cdlout',
-    'CDL/LVS vocabulary export through a SKILL carrier — only when CDL wording is the goal.',
+    'CDL/LVS vocabulary through the si batch translator with a hand-built auCdl si.env — verified live, full devices, no Virtuoso process.',
+    [{ title: 'si auCdl batch export (paste into a shell on the Virtuoso host)', kind: SHELL_BLOCK, text: shell }],
     [
-      { title: 'cdlOut SKILL text (CIW paste, or save as cdl_out.il for the carrier)', kind: SKILL_BLOCK, text: skill },
-      { title: 'headless carrier (paste into a shell on the Virtuoso host)', kind: SHELL_BLOCK, text: shell },
+      'si on PATH (ships with the Virtuoso install); a cds.lib defining the library at the -cdslib path',
+      'a run/output directory',
     ],
     [
-      'a Virtuoso process to evaluate the SKILL (open CIW, or the headless carrier)',
-      'cds.lib defining the library',
+      'The simulator MUST be "auCdl" (the analog netlister): the "cdl" digital flavor '
+        + 'SILENTLY DROPS PDK devices without cdl views (OSSHNL-117 — they stop at an empty '
+        + 'symbol view and the netlist comes out hollow, only subckt stubs left).',
+      'The hand-built si.env above is verified live; tunables (shortRES, resistorCheck, '
+        + 'capacitorCheck, diodeCheck, ...) follow the official sample '
+        + '<install>/tools.lnx86/dfII/samples/transUI/cdlOut.il.',
+      'auCdl wording differs from the spectre netlist (LVS grade): geometry is simplified '
+        + '(nf folds into m with w*nf, macro device names shorten), model subckt names become '
+        + 'the master token, instance-only properties may drop — normalize before diffing '
+        + 'against a spectre export.',
+      'The SKILL cdlOut function is NOT defined in a bare headless session (verified: getd '
+        + 'returns nil) — it lives in the GUI CDL Out form context.',
     ],
-    [
-      HEADLESS_SKILL_NOTE,
-      'auCdl simInfo renames devices vs the spectre netlist (e.g. a rppoly_rf instance '
-        + 'netlists as rppolyl_rf plus a model property) — normalize the wording before '
-        + 'diffing against a spectre export.',
-    ],
-    F1_FALLBACK,
+    'The SKILL cdlOut function only exists inside the GUI CDL Out form context: F1 = the '
+    + 'user runs File -> Export -> CDL (Netlisting Mode: Analog) in their open session.',
   )
 }
 
@@ -531,10 +529,11 @@ export function vschTools() {
         + 'Returns ready-to-run text blocks only — nothing is executed and no files are '
         + 'written. Schemes: si (si -batch -command nl, needs a one-time CIW-minted '
         + 'si.env), ocean (headless ocean with per-run CDS.log isolation, no si.env), '
-        + 'cdlout (CDL/LVS vocabulary via a SKILL carrier), plain_skill (OCEAN/SKILL '
-        + 'text to paste into an open CIW — zero startup). Without scheme, every scheme '
-        + 'comes back structured — try them in order. Full recipes and pitfalls: the '
-        + 'bundled smart-spectre skill, virtuoso-export.md.',
+        + 'cdlout (CDL/LVS vocabulary via si -command netlist with a hand-built auCdl '
+        + 'si.env), plain_skill (OCEAN/SKILL text to paste into an open CIW — zero '
+        + 'startup). Without scheme, every scheme comes back structured — try them in '
+        + 'order. Full recipes and pitfalls: the bundled smart-spectre skill, '
+        + 'virtuoso-export.md.',
       parameters: {
         lib: { type: 'string', required: true, description: 'OA library of the cell to export' },
         cell: { type: 'string', required: true, description: 'Cell to export' },

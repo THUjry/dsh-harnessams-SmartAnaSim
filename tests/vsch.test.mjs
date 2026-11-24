@@ -79,16 +79,20 @@ test('ocean scheme: heredoc .ocn + inlined log isolation in one shell block', as
   assert.ok(result.schemes[0].caveats.some((c) => c.includes('NOT land in the cwd')))
 })
 
-test('cdlout scheme: heredoc + stdin-REPL carrier; CIW block stays exit-free', async () => {
+test('cdlout scheme: si batch with a hand-built auCdl si.env; "cdl" trap flagged', async () => {
   const result = await run(exportTool, { lib: 'lib0', cell: 'amp', scheme: 'cdlout' })
   const scheme = result.schemes[0]
   const shell = shellOf(scheme)
-  assert.match(shell, /cat > cdl_out\.il <<'EOF'/)
-  assert.match(shell, /timeout -s KILL 300s virtuoso -nograph -log cdl_out\.log < cdl_out\.il/)
-  assert.match(shell, /exit\(\)/) // headless-only tail, inside the heredoc
-  const skill = skillOf(scheme)
-  assert.match(skill, /cdlOut\("lib0" "amp"/)
-  assert.doesNotMatch(skill, /exit\(/) // a CIW paste must not close the user's session
+  // verified live: si -command netlist with simulator auCdl, si.env heredoc in the same block
+  assert.match(shell, /cat > si\.env <<'EOF'/)
+  assert.match(shell, /simLibName = "lib0"/)
+  assert.match(shell, /simCellName = "amp"/)
+  assert.match(shell, /simSimulator = "auCdl"/)
+  assert.doesNotMatch(shell, /simSimulator = "cdl"/)
+  assert.match(shell, /si -batch -cdslib <cds\.lib> -command netlist/)
+  // the hollow-netlist trap and the GUI-only SKILL function ride along as caveats
+  assert.ok(scheme.caveats.some((c) => c.includes('OSSHNL-117') && c.includes('auCdl')))
+  assert.ok(scheme.caveats.some((c) => c.includes('NOT defined in a bare headless')))
 })
 
 test('no scheme references the nonexistent virtuoso -execute flag', async () => {

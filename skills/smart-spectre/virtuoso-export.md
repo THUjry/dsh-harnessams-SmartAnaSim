@@ -35,9 +35,10 @@ includes, no analysis statements (Maestro decks carry those).
 > `simInitEnvWithArgs(runDir lib cell view "spectre" nil)` — minting needs
 > a person / a live CIW. Once minted it is static text, reusable for the
 > same (lib, cell, view, simulator) combo; afterwards `si -batch` is pure
-> CLI. Hand-writing the fields is unverified (the official docs say don't).
-> With no CIW at all: F1 (the user pastes the one-line mint command) or
-> switch to the ocean route (log-isolated, no interlock).
+> CLI. Hand-writing the shared field family is verified live (via the
+> auCdl route below); a mint or a known-good template remains the safest
+> source. With no CIW at all: F1 (the user pastes the one-line mint
+> command) or switch to the ocean route (log-isolated, no interlock).
 
 ## Route 2: headless `ocean` (no si.env)
 
@@ -86,14 +87,47 @@ tb -> ocean re-export round trip):
   environment default model setup (a full corner include list) — circuit +
   env defaults, not include-free.
 
-## Route 3: `cdlOut` (CDL/LVS vocabulary)
+## Route 3: CDL/LVS vocabulary (`si` with a hand-built auCdl si.env)
 
-`cdlOut` is a SKILL function (auCdl vocabulary), not a standalone binary —
-it must run inside a Virtuoso process (open CIW, or the headless
-stdin-REPL carrier documented in `virtuoso-import.md`). Caveat: auCdl
-simInfo renames devices vs the spectre netlist (e.g. a `rppoly_rf`
-instance netlists as `rppolyl_rf` plus a `model` property) — normalize
-the wording before diffing against a spectre export.
+The verified shape (IC618, live, full device coverage on a PDK design)
+reuses the si batch translator with a hand-built si.env whose simulator is
+auCdl — a pure lightweight CLI, seconds to run, no Virtuoso process:
+
+```sh
+mkdir -p <run_dir> && cd <run_dir>
+cat > si.env <<'EOF'
+simLibName = "<lib>"
+simCellName = "<cell>"
+simViewName = "schematic"
+simRunDir = "<run_dir>"
+simSimulator = "auCdl"
+hnlNetlistFileName = "<cell>.cdl"
+simViewList = '("auCdl" "schematic" "symbol")
+simStopList = '("auCdl")
+simNetlistHier = t
+EOF
+si -batch -cdslib /path/to/cds.lib -command netlist
+# product: <run_dir>/<cell>.cdl
+```
+
+- **The simulator MUST be `auCdl` (the analog netlister).** The `"cdl"`
+  digital flavor SILENTLY DROPS PDK devices without cdl views (OSSHNL-117:
+  they stop at an empty symbol view — the netlist comes out hollow, only
+  the subckt stubs left; verified live as a trap).
+- Tunables (`shortRES`, `resistorCheck`, `capacitorCheck`, `diodeCheck`,
+  ...) follow the official sample
+  `<install>/tools.lnx86/dfII/samples/transUI/cdlOut.il`; the si.env field
+  family is shared with the CIW-minted spectre one — which is how
+  hand-writing it got verified live.
+- The SKILL `cdlOut` function is NOT defined in a bare headless
+  `virtuoso -nograph` session (verified: `getd` returns nil) — it lives in
+  the GUI CDL Out form context. F1 = the user runs File -> Export -> CDL
+  (Netlisting Mode: Analog) in their open session.
+- Wording vs a spectre export differs (LVS grade): geometry is simplified
+  (`nf` folds into `m` with `w*nf`, `nch_lvt_mac` becomes `nch_lvt_dnw`),
+  model subckt names become the master token (`rppolys_rf` emitted
+  directly, no `model=` property), instance-only properties may drop —
+  normalize before diffing.
 
 ## Route 4: plain SKILL text in an open CIW (zero startup)
 
