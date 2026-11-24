@@ -3,7 +3,7 @@
 // and the `skill` tool loads the body on demand. Only name + description
 // enter the catalog (two lines); bodies stay on disk until loaded.
 // resourceBase points at the skill directory so a loaded body's relative
-// references (companion pages like worker-config.md, scripts/ via ../scripts)
+// references (companion pages like spectre-cli.md, scripts/ via ../scripts)
 // resolve — the official dsh-skill-badge precedent for packaged skills.
 // Companion .md pages are NOT enumerated at load: the root SKILL.md must
 // name every one of them explicitly. Fail-open by design: a host without

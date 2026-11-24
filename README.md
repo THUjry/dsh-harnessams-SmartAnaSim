@@ -102,7 +102,7 @@ The schema is `@deepseek-ai/schemastery` (a runtime `dependencies` entry — ins
 
 ## Spectre channel
 
-`spectre_assemble` runs the project's `script/analysis/gen_*.py` with the project root as cwd (`--out` forwarded, `HARNESSAMS_SIMULATOR=spectre` in the environment) to emit `template*.scs` + `sweep_config.json` pairs. The sweep worker's config contract (see `scripts/spectre/spectre_sweep_worker.py` and the skill's `worker-config.md`):
+`spectre_assemble` runs the project's `script/analysis/gen_*.py` with the project root as cwd (`--out` forwarded, `HARNESSAMS_SIMULATOR=spectre` in the environment) to emit `template*.scs` + `sweep_config.json` pairs. The sweep worker's config contract (see `scripts/spectre/spectre_sweep_worker.py` and the skill's `spectre-cli.md`):
 
 ```json
 {

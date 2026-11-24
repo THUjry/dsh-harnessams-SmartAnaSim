@@ -2,6 +2,34 @@
 
 Companion page of the `smart-spectre` root skill for the Virtuoso schematic interaction face. Direction: everything that writes INTO an OpenAccess library — importing a netlist as a schematic, generating the symbol and the `<cell>_tb` testbench skeleton, writing tuned parameters back into a schematic copy, and re-importing a tuned netlist (F2). The tool face is `gen_vsch_import` (schemes `param` / `cli` / `plain_skill`); this page carries the recipes and pitfalls the tool text embeds, plus the parameter-writeback recipe (no tool scheme — compose the Cadence SKILL text yourself, guided here).
 
+## Round-trip charter (overview — applies to both directions)
+
+The `gen_vsch_*` tools assemble ready-to-run text for the netlist <-> OpenAccess round trip (they never execute anything and write no files — cds.lib layouts and install roots are environment-specific, so execution belongs to the caller; every scheme also carries a `plain_skill` variant: self-contained Cadence SKILL text pasteable into an open CIW). Workflow charter:
+
+| Phase | Who / what | What happens |
+|---|---|---|
+| 1 | human + export tool | draw the schematic and hand the cell path over; export the netlist headlessly (ocean). For a process never run before: run one minimal no-parameter simulation first and hand its run_dir/log over — that configures the required model sections and simulation setup (afterwards learnable from past projects) |
+| 2 | agent | build the testbench and tune at the NETLIST level; get results |
+| 3 | tool | display results as HTML |
+| 4 | SKILL text | back-annotate device/net names and key parameters into the schematic and form the tb (plain_skill schemes + the writeback recipe below) |
+| 5 | human | finalize and configure the final tb manually; run it and double-align against the pre-import design: netlist AND simulation results |
+
+Division of labor: agent-orchestrated where flexibility is needed, tool-constrained where strictness is needed. Model sections and simulator setup come ONLY from the include lines of user-provided simulation logs (`input.scs` / run_dir artifacts) — never from browsing PDK or model-library directories.
+
+Tool surface (IC618-verified) — lightweight CLI first:
+
+| Tool | Direction | Note |
+|---|---|---|
+| `si` | schematic -> netlist | batch translator, no GUI, no Maestro; first choice for export and validation re-exports |
+| `spiceIn` | netlist -> schematic | independent binary; the F2 re-import channel |
+| `virtuoso -nograph` (stdin REPL) | SKILL carrier | pipe the SKILL text in (`timeout -s KILL ... virtuoso -nograph -log x.log < s.il`; no `-execute` flag exists); slow start, self-contained log, no interlock; judge by printed markers, not rc |
+| `ocean -restore` | SKILL carrier / export | writeback alternate carrier; `createNetlist` is the si.env-free export (log isolation required — see `virtuoso-export.md`) |
+| `si -command netlist` (auCdl si.env) | schematic -> CDL | LVS/CDL vocabulary; the same lightweight si binary with a hand-built auCdl si.env (the SKILL `cdlOut` function exists only in the GUI form context) |
+
+(`spiceOut` does not exist — the installation's `spice*` set is `spiceIn` alone.) Hard boundary: Cadence has no SKILL interpreter independent of a Virtuoso process — parameter writeback is the only round-trip step that cannot stay on a lightweight CLI.
+
+Fallback ladder when the background carrier fails: **F1** = hand the self-contained SKILL block to the user for their already-open CIW (zero new startup cost; they paste the printed echo back); **F2** = re-import the tuned netlist as `<cell>_tuned` through spiceIn (all-CLI; ASG-placed graphics, connectivity and parameters guaranteed by the netlist itself).
+
 ## spiceIn primer
 
 `spiceIn` is an independent IC618 binary (no Virtuoso process, no GUI, seconds to start): netlist -> OA schematic, with ASG automatic placement and routing on by default at the CLI level (the GUI form defaults to OFF; `envSetVal("spiceIn" "asgMode" 'boolean t)` turns it on there).
