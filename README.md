@@ -81,7 +81,7 @@ The family-level `harnessams.json` walker is retired (2026-11-19 D-004): configu
 |---|---|
 | `spectre_cmd` | the `--spectre-cmd` argument > the run's `sweep_config.json` `spectre_cmd` > `PATH` |
 | `pdk_lib` | never consumed here — PDK paths live in assembly-layer configuration only |
-| `sim_scripts_dir` | the project's `workspace_config.json` `workspace.sim_scripts_dir` (consumed by the HarnessAMS suite's batch channel; still points at this package's `scripts/` tree by default) |
+| `sim_scripts_dir` | the project's `workspace_config.json` `workspace.sim_scripts_dir` (consumed by the HarnessAMS suite's batch channel; fresh projects stage their own copy under `.harnessams/scripts` + sibling `assets/` — D-015 — and legacy projects keep pointing at this package's `scripts/` tree) |
 | `trash_dir` / `plotly_asset` / `remote_python` / `remote_scripts_dir` | retired with the family file |
 
 ## Tool family toggles

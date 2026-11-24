@@ -72,7 +72,7 @@ Before a netlist is accepted, the assembly-layer check library (also applied whe
 3. **ideal RCL ranges** — R 0.1..1e6 ohm, C 1f..1uF, L 0.1p..10nH (m/M is case-sensitive per Spectre: `1Meg`, never `1M`);
 4. **bias** — |bias| < Vdd.
 
-Check parameters resolve per session: built-in defaults <- the project's optional `.harnessams/check_params.json` <- the calling session's optional confirmed table (`.harnessams/sessions.json`); absent stores fail open.
+Check parameters resolve per session: built-in defaults <- the project's optional `.harnessams/check_params.json` <- the calling session's optional confirmed table (`.harnessams/sessions.json`); absent stores fail open. `.harnessams/` is plugin-managed project storage — do not read it during normal work (the resolution above is automatic; you never need to open those files yourself).
 
 ## Run-directory contract (what the worker writes)
 
