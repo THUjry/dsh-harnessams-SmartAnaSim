@@ -44,6 +44,14 @@ includes, no analysis statements (Maestro decks carry those).
 ```sh
 mkdir -p <run_dir> && cd <run_dir>
 cat > export.ocn <<'EOF'
+;; pre-check pass (verified self-heal): a freshly imported cell that never
+;; went through schCheck + dbSave fails createNetlist with OSSHNL-109 -> 514 —
+;; open, check, save, close first. Harmless on already-clean cells.
+cv = dbOpenCellViewByType("<lib>" "<cell>" "schematic" "schematic" "a")
+schCheck(cv)
+dbSave(cv)
+dbClose(cv)
+printf("PRECHECK_DONE\n")
 simulator('spectre)
 design("<lib>" "<cell>" "schematic")
 createNetlist(?recreateAll t)
@@ -65,14 +73,27 @@ runnable deck (OSSHNL-109 auto-recovers). Corroboration that session state
 matters: reference implementations deliberately guard against re-setting
 the simulator, to avoid clobbering already-declared modelFile state.
 
+Verified live (2026-11-24, a full spiceIn place_only import -> symbol ->
+tb -> ocean re-export round trip):
+
+- the pre-check pass is load-bearing: a cell fresh out of spiceIn failed
+  `createNetlist` with OSSHNL-109 then 514 until `schCheck` + `dbSave` ran
+  first (afterwards rc=0 with both markers);
+- the netlist does NOT land in the cwd: ocean writes under its own
+  simulation root as `<sim_root>/<cell>/spectre/schematic/netlist/input.scs`
+  — read the path `createNetlist` echoes (recorded in the run dir CDS.log);
+- with only `simulator` + `design` declared the product still carried the
+  environment default model setup (a full corner include list) — circuit +
+  env defaults, not include-free.
+
 ## Route 3: `cdlOut` (CDL/LVS vocabulary)
 
 `cdlOut` is a SKILL function (auCdl vocabulary), not a standalone binary —
-it must run inside a Virtuoso process (open CIW or
-`virtuoso -nograph -execute`). Caveat: auCdl simInfo renames devices vs
-the spectre netlist (e.g. a `rppoly_rf` instance netlists as `rppolyl_rf`
-plus a `model` property) — normalize the wording before diffing against a
-spectre export.
+it must run inside a Virtuoso process (open CIW, or the headless
+stdin-REPL carrier documented in `virtuoso-import.md`). Caveat: auCdl
+simInfo renames devices vs the spectre netlist (e.g. a `rppoly_rf`
+instance netlists as `rppolyl_rf` plus a `model` property) — normalize
+the wording before diffing against a spectre export.
 
 ## Route 4: plain SKILL text in an open CIW (zero startup)
 
@@ -95,6 +116,16 @@ route: the user pastes the block, then copies the printed echo back.
    connectivity/device names must be unchanged. The round trip is closed
    only when the diff is clean (si-to-si is pure-netlist wording, directly
    comparable); cdlOut wording differences normalize per route 3.
+
+An ocean re-export (route 2) normalizes value formats — `1.0u` becomes
+`1e-06`, explicit `m=1` defaults appear on R/C lines — so diff it
+semantically (per-parameter value equality, device names, by-name
+connectivity), not textually. Verified round-trip verdict (7-instance
+attenuator, 2026-11-24): masters, parameter values and by-name
+connectivity all exact — an `addProp model` remap (`rppolys_rf` -> cell
+`rppoly_rf`) round-trips its netlist name back; the only loss was an
+instance-level parameter the target cell's subckt does not declare
+(harmless there, but expect it).
 
 ## ocean batching and the CDS.log lock (solved)
 

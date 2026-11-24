@@ -149,7 +149,7 @@ Tool surface (IC618-verified) — lightweight CLI first:
 |---|---|---|
 | `si` | schematic -> netlist | batch translator, no GUI, no Maestro; first choice for export and validation re-exports |
 | `spiceIn` | netlist -> schematic | independent binary; the F2 re-import channel |
-| `virtuoso -nograph -execute` | SKILL carrier | parameter writeback's first-choice carrier (slow start, self-contained log, no interlock) |
+| `virtuoso -nograph` (stdin REPL) | SKILL carrier | pipe the SKILL text in (`timeout -s KILL ... virtuoso -nograph -log x.log < s.il`; no `-execute` flag exists); slow start, self-contained log, no interlock; judge by printed markers, not rc |
 | `ocean -restore` | SKILL carrier / export | writeback alternate carrier; `createNetlist` is the si.env-free export (log isolation required — see `virtuoso-export.md`) |
 | `cdlOut` (SKILL function) | schematic -> CDL | LVS/CDL vocabulary only; rides one of the two carriers |
 

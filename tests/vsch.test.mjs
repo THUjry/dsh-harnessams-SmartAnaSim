@@ -72,6 +72,30 @@ test('ocean scheme: heredoc .ocn + inlined log isolation in one shell block', as
   assert.match(shell, /timeout -s KILL 600s/)
   assert.match(shell, /-restore/)
   assert.doesNotMatch(shell, /-replay/)
+  // verified self-heal pre-check for freshly imported cells (OSSHNL-109 -> 514)
+  assert.match(shell, /PRECHECK_DONE/)
+  assert.match(shell, /schCheck\(cv\)/)
+  assert.ok(result.schemes[0].caveats.some((c) => c.includes('OSSHNL-109')))
+  assert.ok(result.schemes[0].caveats.some((c) => c.includes('NOT land in the cwd')))
+})
+
+test('cdlout scheme: heredoc + stdin-REPL carrier; CIW block stays exit-free', async () => {
+  const result = await run(exportTool, { lib: 'lib0', cell: 'amp', scheme: 'cdlout' })
+  const scheme = result.schemes[0]
+  const shell = shellOf(scheme)
+  assert.match(shell, /cat > cdl_out\.il <<'EOF'/)
+  assert.match(shell, /timeout -s KILL 300s virtuoso -nograph -log cdl_out\.log < cdl_out\.il/)
+  assert.match(shell, /exit\(\)/) // headless-only tail, inside the heredoc
+  const skill = skillOf(scheme)
+  assert.match(skill, /cdlOut\("lib0" "amp"/)
+  assert.doesNotMatch(skill, /exit\(/) // a CIW paste must not close the user's session
+})
+
+test('no scheme references the nonexistent virtuoso -execute flag', async () => {
+  for (const result of [await run(exportTool, { lib: 'lib0', cell: 'amp' }),
+    await run(importTool, { netlist_file: 'amp.scs' })]) {
+    assert.doesNotMatch(JSON.stringify(result), /virtuoso -nograph -execute/)
+  }
 })
 
 test('ocean and plain_skill render modelFile lines from model_includes', async () => {
@@ -105,6 +129,11 @@ test('import default: place_only param-file scheme first, battle-tested cli seco
   assert.match(shell, /cat > spiceIn\.il <<'EOF'/)
   assert.match(shell, /spiceIn -param spiceIn\.il/)
   assert.match(shell, /conn2schArgs\s+"-asg \+PLACE_ONLY -NOSQUARE -MIN_CROSSOVERS -FAST_LABELS \+NOXTRSCH -VERBOSE"/)
+  // camelCase field spellings (IC618-verified) — the lowercase variants are wrong
+  assert.match(shell, /'refLibList\s+"/)
+  assert.match(shell, /'devMapFile\s+"/)
+  assert.doesNotMatch(shell, /'reflibList/)
+  assert.doesNotMatch(shell, /'devmapFile/)
   // the system() ban and the no-place-only-CLI-flag caveat ride along
   assert.ok(result.schemes[0].caveats.some((c) => c.includes('system()')))
   assert.ok(result.schemes[0].caveats.some((c) => c.includes('NO place-only flag')))
@@ -125,13 +154,18 @@ test('plain_skill import block: conn2Sch + symbol pair + tb, and gen_symbol_tb=f
   const full = (await run(importTool, { netlist_file: 'amp.scs', output_lib: 'lib0' })).schemes[2]
   const text = skillOf(full)
   assert.match(text, /conn2Sch\(lib cell nlv/)
-  assert.match(text, /schSchemToPinList/)
-  assert.match(text, /schPinListToSymbol/)
-  assert.match(text, /schGetPinOrder/)
-  assert.match(text, /dbCreateInst\(tbcv nil master "DUT" 0:0\)/)
+  // verified signature shapes (IC618): 3 string args / 4-arg symbol build / 5-arg dbCreateInst
+  assert.match(text, /schSchemToPinList\(lib cell "schematic"\)/)
+  assert.match(text, /schPinListToSymbol\(lib cell "symbol" pinl\)/)
+  assert.match(text, /schGetPinOrder\(dbOpenCellViewByType\(lib cell "symbol" "" "r"\)\)/)
+  assert.match(text, /dbCreateInst\(tbcv master "DUT" list\(0 0\) "R0"\)/)
   assert.match(text, /amp_tb/)
-  assert.match(text, /errset\(/)
+  assert.match(text, /errset\(progn\(/)
+  assert.doesNotMatch(text, /errset\(begin/)
   assert.match(text, /IMPORT_DONE/)
+  // a CIW paste must not close the user's session: no exit call of its own
+  // (the header comment may mention the word, so anchor to a line-leading call)
+  assert.doesNotMatch(text, /\n\s*exit\(/)
   const trimmed = (await run(importTool, { netlist_file: 'amp.scs', gen_symbol_tb: false })).schemes[2]
   assert.doesNotMatch(skillOf(trimmed), /schPinListToSymbol/)
   assert.match(skillOf(trimmed), /conn2Sch\(lib cell nlv/)

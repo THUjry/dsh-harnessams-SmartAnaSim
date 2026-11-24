@@ -65,19 +65,44 @@ Why `addProp model` works: `model` is the rppoly_rf CDF parameter that
 selects which model subckt the netlister emits — the netlist names
 (`rppolys_rf` / `rppolyl_rf`) are model-file subckts, not cells.
 
-## The verified import command (CLI form)
+## The verified import commands (CLI and parameter-file forms)
 
-The standalone CLI carries the data flags only (`-netlistFile`,
-`-outputLib`, `-language`, `-reflibList`, `-devmapFile`); everything else
-(ASG tuning, overwrite control) lives in the `-param` parameter-file form.
-The CLI form below is battle-tested (two consecutive successful runs,
-2026-11-23, a 7-instance attenuator cell):
+Two forms, both verified live on IC618. The standalone CLI carries the data
+flags only (`-netlistFile`, `-outputLib`, `-language`, `-reflibList`,
+`-devmapFile`); everything else (ASG tuning, overwrite control, conn2sch
+switches) lives in the `-param` parameter-file form. CLI form (battle-tested,
+two consecutive successful runs, 2026-11-23, a 7-instance attenuator cell —
+full place and route):
 
 ```sh
 spiceIn -netlistFile <cell>.scs -outputLib <lib> -language Spectre \
         -reflibList "<pdk_lib> <user_lib> basic analogLib" \
         -devmapFile dev.map
 ```
+
+Parameter-file form (verified 2026-11-24 with `+PLACE_ONLY`, SPICEIN-54,
+zero c2s warnings). Field spellings are camelCase — `refLibList` /
+`devMapFile` exactly as below; more optional fields (`topCell`,
+`overwriteCells`, `masterCellForGnd`, `outputViewName`, ...) in the
+official sample `<install>/tools/dfII/samples/spiceIn/param.il`:
+
+```sh
+cat > spiceIn.il <<'EOF'
+spiceInParams = list(nil
+  'netlistFile    "<cell>.scs"
+  'outputLib      "<lib>"
+  'language       "Spectre"
+  'refLibList     "<pdk_lib> <user_lib> basic analogLib"
+  'devMapFile     "dev.map"
+  'conn2schArgs   "-asg +PLACE_ONLY -NOSQUARE -MIN_CROSSOVERS -FAST_LABELS +NOXTRSCH -VERBOSE"
+)
+EOF
+spiceIn -param spiceIn.il
+```
+
+Products of the param form (verified): the `schematic` view plus `data.dm` —
+no `netlist_tmp` intermediate and no symbol (spiceIn auto-symbols only
+instantiated subckts; generate it per the next section).
 
 ## place_only: the placement ladder
 
@@ -132,13 +157,52 @@ block, ending with a `<cell>_tb` schematic holding one `DUT` instance of
 the fresh symbol (`dbOpenCellViewByType` + `dbCreateInst`, then
 `schCheck`/`dbSave`).
 
+Verified call shapes (IC618, live 2026-11-24):
+
+```skill
+pinl  = schSchemToPinList(lib cell "schematic")    ; three STRING args — not a cellview
+symcv = schPinListToSymbol(lib cell "symbol" pinl) ; creates AND saves the symbol view
+schGetPinOrder(dbOpenCellViewByType(lib cell "symbol" "" "r"))  ; readback check
+inst  = dbCreateInst(tbcv master "DUT" list(0 0) "R0") ; 5-arg form — see below
+```
+
+Pitfalls verified with them: wrap multi-step bodies as
+`errset(progn(...))` — `errset(begin ...))` is illegal (begin parses as a
+stray argument and the call fails); `dbCreateInst` must be the 5-arg form
+above (the `nil`-master `x:y`-point variant errors out); a failed run can
+leave an unsaved view that makes the next
+`dbOpenCellViewByType(... "a")` return nil — delete the cell and retry
+instead of fighting the leftover.
+
+## Running SKILL text headless (stdin REPL carrier)
+
+`virtuoso -nograph` has NO `-execute` flag (only `-replay=<log>` /
+`-restore=<session>`) — the headless carrier is its stdin REPL (verified,
+IC618):
+
+```sh
+timeout -s KILL 300s virtuoso -nograph -log <tag>.log < script.il > <tag>.out 2>&1
+```
+
+- the script's last line must be `exit(0)` — and CIW-paste blocks must NOT
+  carry it (it would close the user's session); append it only for headless
+  use;
+- startup takes 1-2.5 min; a plain `timeout` (SIGTERM) is ignored by
+  virtuoso — `-s KILL` is mandatory;
+- judge success by the printed markers, NOT the exit code: a broken site
+  .cdsinit (e.g. a failed calibre.skl load) drops the process into an
+  interactive `>` prompt, `exit(0)` never fires and the KILL lands after
+  the work completed and was saved — rc=137 with markers present means
+  success (verified: a tb-creation run that printed its DONE trail and
+  saved OA still left rc=137).
+
 ## Parameter writeback — the CDF five-step (compose the SKILL text yourself)
 
 The only step of the whole round trip with no lightweight CLI (Cadence has
 no SKILL interpreter independent of a Virtuoso process): writing tuned
-parameters back into a schematic copy must run inside `virtuoso
--nograph -execute` (first-choice carrier), the user's front CIW (F1), or a
-wrapped `ocean -restore`. The textbook sequence:
+parameters back into a schematic copy must run inside a Virtuoso process —
+the headless stdin-REPL carrier (previous section), the user's front CIW
+(F1), or a wrapped `ocean -restore`. The textbook sequence:
 
 ```skill
 ;; save-as first (never edit the hand-drawn original in place)

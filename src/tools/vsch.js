@@ -9,12 +9,15 @@
 // (environment variables are inlined as command prefixes; the only files
 // created are the mechanical carriers a tool strictly requires, written by
 // a heredoc inside the same block), skill blocks are self-contained
-// Cadence SKILL text (paste into an open CIW, or hand to
-// `virtuoso -nograph -execute`).
+// Cadence SKILL text (paste into an open CIW, or run headless through the
+// stdin-REPL carrier — see HEADLESS_SKILL_NOTE; `virtuoso -nograph` has no
+// -execute flag).
 //
 // Recipes and pitfalls migrated from the project's Virtuoso-interaction
 // research (2026-11-23) live in the bundled smart-spectre skill pages
-// `virtuoso-import.md` / `virtuoso-export.md`.
+// `virtuoso-import.md` / `virtuoso-export.md`; the shapes embedded below
+// were verified live on IC618 (2026-11-24, a 7-instance place_only import
+// through symbol/tb generation and an ocean re-export round trip).
 const SHELL_BLOCK = 'shell'
 const SKILL_BLOCK = 'skill'
 
@@ -41,6 +44,16 @@ const PLACE_MODE_NOTE = 'place_only = devices placed, connectivity carried by ne
 const F1_FALLBACK = 'If the headless carrier fails (startup hang / license wait / lost '
   + 'SSH) and the user is present: paste the skill block verbatim into the user\'s '
   + 'already-open CIW and ask them to copy the printed echo back — zero new startup cost.'
+
+const HEADLESS_SKILL_NOTE = 'Headless SKILL carrier (IC618-verified): `virtuoso -nograph` '
+  + 'has NO -execute flag (only -replay=<log> / -restore=<session>) — pipe the SKILL text '
+  + 'into its stdin REPL instead: `timeout -s KILL 300s virtuoso -nograph -log <tag>.log '
+  + '< script.il > <tag>.out 2>&1` with exit(0) as the last script line (append it to a '
+  + 'CIW-shaped block before headless use). Startup takes 1-2.5 min; plain timeout '
+  + '(SIGTERM) is ignored — -s KILL is mandatory. Judge success by the printed markers, '
+  + 'NOT the exit code: a broken site .cdsinit (e.g. a failed calibre.skl load) drops the '
+  + 'process into an interactive ">" prompt, exit(0) never fires and the KILL lands after '
+  + 'the work completed and saved — rc=137 with markers present means success.'
 
 // ---- small helpers ------------------------------------------------------
 
@@ -73,17 +86,17 @@ function importParamScheme(args) {
   const devmapFile = ph(args.devmap_file, 'dev.map')
   const text = [
     '# Run from a directory whose cds.lib defines the output library and every',
-    '# referenced library. Field spellings follow the official sample',
-    '# <install>/tools/dfII/samples/spiceIn/param.il (conn2schArgs is verbatim from',
-    '# it; the data-field names are by analogy — diff against that sample before',
-    '# the first real run).',
+    '# referenced library. Field spellings verified live on IC618 (2026-11-24):',
+    '# refLibList / devMapFile are camelCase; more optional fields (topCell,',
+    '# overwriteCells, masterCellForGnd, outputViewName...) in the official sample',
+    '# <install>/tools/dfII/samples/spiceIn/param.il.',
     'cat > spiceIn.il <<\'EOF\'',
     'spiceInParams = list(nil',
     `  'netlistFile    "${netlistFile}"`,
     `  'outputLib      "${outputLib}"`,
     `  'language       "${language}"`,
-    `  'reflibList     "${reflibList}"`,
-    `  'devmapFile     "${devmapFile}"`,
+    `  'refLibList     "${reflibList}"`,
+    `  'devMapFile     "${devmapFile}"`,
     `  'conn2schArgs   "${conn2schArgs}"`,
     ')',
     'EOF',
@@ -103,6 +116,9 @@ function importParamScheme(args) {
       'The standalone spiceIn CLI has NO place-only flag (its only CLI-level ASG switch '
         + 'is -noasg); +PLACE_ONLY is reachable only through the conn2schArgs parameter '
         + 'file (or the standalone conn2sch tool).',
+      'Products of this param form (verified live): the schematic + data.dm — no '
+        + 'netlist_tmp intermediate, no symbol (spiceIn auto-symbols only instantiated '
+        + 'subckts). Generate the symbol/tb separately (plain_skill scheme).',
       PLACE_MODE_NOTE,
       SPICEIN_BAN,
       NO_OVERWRITE,
@@ -155,35 +171,39 @@ function importPlainSkillScheme(args) {
   const text = [
     ';; For a cell that already holds a netlist-form view (spiceIn names it',
     `;; netlist_tmp; si names it netlist): turn it into a schematic${goal} — one block.`,
-    ';; Self-contained CIW paste (also runs under `virtuoso -nograph -execute`):',
-    ';; every step is errset-guarded and prints a trail; copy the whole echo back',
-    ';; for diagnosis. Signatures follow the Cadence schematic SKILL reference; the',
-    ';; conn2Sch place-only keyword is unverified (see `conn2sch -h` before relying',
-    ';; on it).',
-    `let( (lib cell tb nlv schem pinl sym tbcv master inst rc)`,
+    ';; Self-contained CIW paste — do NOT add exit() here (it would close the user\'s',
+    ';; session; append exit(0) as the last line only when running headless through',
+    ';; the stdin-REPL carrier). Every step is errset(progn(...))-guarded and prints',
+    ';; a trail; copy the whole echo back for diagnosis. Signature shapes verified',
+    ';; live on IC618; only the conn2Sch place-only keyword is still unverified',
+    ';; (see `conn2sch -h` before relying on it).',
+    `let( (lib cell tb nlv schem pinl symcv tbcv master inst rc)`,
     `  lib  = "${lib}"`,
     `  cell = "${cell}"`,
     `  tb   = "${tb}"`,
     '  nlv  = "netlist_tmp"',
     `  ;; 1/${n} netlist view -> schematic`,
-    '  rc = errset(conn2Sch(lib cell nlv ?destViewName "schematic" ?block t))',
+    '  rc = errset(progn(',
+    '    conn2Sch(lib cell nlv ?destViewName "schematic" ?block t)',
+    '  ))',
     `  printf("[1/${n}] conn2Sch %s/%s %s -> schematic: %s\\n" lib cell nlv if(rc "done" "FAILED"))`,
     '  unless(rc error("conn2Sch failed — see messages above"))',
     ...(genTb ? [
-      '  ;; 2/4 schematic -> symbol (Cadence-native pair, pin-order readback)',
-      '  rc = errset(begin',
-      '    schem = dbOpenCellViewByType(lib cell "schematic" "" "r")',
-      '    pinl  = schSchemToPinList(schem)',
-      '    sym   = schPinListToSymbol(lib cell pinl)',
-      '    printf("    symbol pin order: %L\\n" schGetPinOrder(sym))',
+      '  ;; 2/4 schematic -> symbol (schPinListToSymbol saves the view itself)',
+      '  rc = errset(progn(',
+      '    pinl  = schSchemToPinList(lib cell "schematic")   ; three string args, not a cellview',
+      '    unless(pinl error("schSchemToPinList returned nil"))',
+      '    symcv = schPinListToSymbol(lib cell "symbol" pinl)',
+      '    unless(symcv error("schPinListToSymbol returned nil"))',
+      '    printf("    symbol pin order: %L\\n" schGetPinOrder(dbOpenCellViewByType(lib cell "symbol" "" "r")))',
       '  ))',
       '  printf("[2/4] symbol generation: %s\\n" if(rc "done" "FAILED"))',
       '  unless(rc error("symbol generation failed — delete partial views before retrying"))',
       `  ;; 3/4 ${tb} schematic with one instance of the fresh symbol`,
-      '  rc = errset(begin',
+      '  rc = errset(progn(',
       '    tbcv   = dbOpenCellViewByType(lib tb "schematic" "schematic" "a")',
       '    master = dbOpenCellViewByType(lib cell "symbol" "" "r")',
-      '    inst   = dbCreateInst(tbcv nil master "DUT" 0:0)',
+      '    inst   = dbCreateInst(tbcv master "DUT" list(0 0) "R0")   ; 5-arg form — the nil-master x:y variant errors',
       '    schCheck(tbcv)',
       '    dbSave(tbcv)',
       '    dbClose(tbcv)',
@@ -191,7 +211,7 @@ function importPlainSkillScheme(args) {
       `  printf("[3/4] %s schematic with DUT instance: %s\\n" tb if(rc "done" "FAILED"))`,
     ] : []),
     `  ;; ${n}/${n} re-check and save the imported schematic`,
-    '  rc = errset(begin',
+    '  rc = errset(progn(',
     '    schem = dbOpenCellViewByType(lib cell "schematic" "schematic" "a")',
     '    schCheck(schem)',
     '    dbSave(schem)',
@@ -214,8 +234,15 @@ function importPlainSkillScheme(args) {
     [
       'spiceIn auto-generates symbols only for INSTANTIATED subckts — a single-subckt '
         + 'netlist import leaves the top cell without a symbol, which step 2/4 fixes.',
-      'The schSchemToPinList / schPinListToSymbol / schGetPinOrder call shapes follow '
-        + 'the Cadence reference; treat a FAILED trail as iteration input, not a dead end.',
+      'Verified live (IC618): schSchemToPinList takes three string args (lib cell view); '
+        + 'schPinListToSymbol saves the generated symbol view itself; dbCreateInst must be '
+        + 'the 5-arg form dbCreateInst(cv master "name" list(x y) "R0") — the nil-master '
+        + 'x:y variant errors out; errset wraps progn (a bare begin is parsed as a stray '
+        + 'argument and fails).',
+      'A failed run can leave a broken/unsaved view behind that makes the next '
+        + 'dbOpenCellViewByType(... "a") return nil — delete the cell (or its partial '
+        + 'views) and retry instead of fighting the leftover.',
+      HEADLESS_SKILL_NOTE,
     ],
     F1_FALLBACK,
   )
@@ -279,6 +306,14 @@ function exportOceanScheme(args) {
       return `modelFile(list("${p}" "${s}"))`
     })
   const ocn = [
+    ';; pre-check pass (verified self-heal): a freshly imported cell that never went',
+    ';; through schCheck + dbSave fails createNetlist with OSSHNL-109 then 514 — open,',
+    ';; check, save, close first. Harmless on already-clean cells.',
+    `cv = dbOpenCellViewByType("${lib}" "${cell}" "${view}" "schematic" "a")`,
+    'schCheck(cv)',
+    'dbSave(cv)',
+    'dbClose(cv)',
+    'printf("PRECHECK_DONE\\n")',
     'simulator(\'spectre)',
     `design("${lib}" "${cell}" "${view}")`,
     ...(modelLines.length ? modelLines : []),
@@ -321,6 +356,15 @@ function exportOceanScheme(args) {
     ],
     [
       ...deckNote,
+      'Fresh-import self-heal: the PRECHECK block inside export.ocn is load-bearing — '
+        + 'a cell fresh out of spiceIn that never went through schCheck + dbSave fails '
+        + 'createNetlist with OSSHNL-109 then 514 (verified live; the precheck fixes it).',
+      'The netlist does NOT land in the cwd: ocean writes under its own simulation root '
+        + 'as <sim_root>/<cell>/spectre/schematic/netlist/input.scs — read the path '
+        + 'createNetlist echoes (recorded in the run dir CDS.log), not the run directory.',
+      'With no modelFile declared, createNetlist may still emit the environment default '
+        + 'model setup (observed live: a full corner include list injected by the site '
+        + 'environment) — the product is circuit + env defaults, not include-free.',
       'Keep -restore (not -replay): -replay continues past errors and exits 0 with '
         + 'empty stdout — easy to misjudge.',
       'timeout -s KILL is mandatory: an erroring -restore script parks ocean at a '
@@ -338,20 +382,31 @@ function exportCdloutScheme(args) {
   const runDir = ph(args.run_dir, '<run_dir>')
   const skill = [
     ';; CDL/LVS-vocabulary export (auCdl). cdlOut is a SKILL function, not a',
-    ';; standalone binary — it must run inside a Virtuoso process. The argument',
-    ';; list follows the Cadence auCdl SKILL reference; verify it in your install',
+    ';; standalone binary — it must run inside a Virtuoso process (open CIW, or',
+    ';; the headless stdin carrier in the shell block below). The argument list',
+    ';; follows the Cadence auCdl SKILL reference; verify it in your install',
     ';; before the first real run.',
     'let( (rc)',
-    `  rc = errset(cdlOut("${lib}" "${cell}" "${view}" "${runDir}/${cell}.cdl"))`,
+    `  rc = errset(progn(`,
+    `    cdlOut("${lib}" "${cell}" "${view}" "${runDir}/${cell}.cdl")`,
+    '  ))',
     `  printf("cdlOut ${lib}/${cell}: %s\\n" if(rc "done" "FAILED"))`,
     '  unless(rc error("cdlOut failed — see messages above"))',
     ')',
   ].join('\n')
   const shell = [
-    '# carrier for the SKILL block above: headless execute (slow to start, but its',
-    '# log is self-contained — no interlock with GUI sessions); nohup + a separate',
-    '# ssh poll is the robust pattern for slow hosts.',
-    'virtuoso -nograph -execute cdl_out.il -log cdl_out.log',
+    '# carrier for the SKILL block above (IC618-verified shape: virtuoso -nograph',
+    '# has no -execute flag — feed the script through stdin). The heredoc embeds',
+    '# the same block plus the headless-only exit() tail, so this paste is',
+    '# self-contained:',
+    `cat > cdl_out.il <<'EOF'`,
+    skill,
+    'exit()',
+    'EOF',
+    'timeout -s KILL 300s virtuoso -nograph -log cdl_out.log < cdl_out.il > cdl_out.out 2>&1',
+    'tail -5 cdl_out.out',
+    '# success = the "cdlOut ...: done" marker in cdl_out.out — NOT the exit code',
+    '# (rc 137 after the markers = the KILL landed past a broken-init ">" prompt).',
   ].join('\n')
   return scheme(
     'cdlout',
@@ -365,6 +420,7 @@ function exportCdloutScheme(args) {
       'cds.lib defining the library',
     ],
     [
+      HEADLESS_SKILL_NOTE,
       'auCdl simInfo renames devices vs the spectre netlist (e.g. a rppoly_rf instance '
         + 'netlists as rppolyl_rf plus a model property) — normalize the wording before '
         + 'diffing against a spectre export.',
