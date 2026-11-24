@@ -104,6 +104,16 @@ python ../scripts/spectre/spectre_psf_parse.py --raw-dir <one point's netlist.sc
 
 Outputs land in `<target>/psf/` by default: per point `<NN>_psf.json` (swept analyses: signal -> swept curve with complex phasors and delta decompression) — `--format csv` adds the long form `point,signal,index,sweep_value,re,im` — plus `psf_index.json` (the point index and per-point errors). S-parameter `sp.sp` content flattens to `freq` + `s11..sNN` complex curves. Non-swept `*.info` files (DC operating points) parse to name/value scalars. Exit codes: `0` parsed at least one point, `1` nothing parsed, `2` usage/IO error. The parser reads psfascii only — the sweep must run Spectre with `-format psfascii` (the worker's default).
 
+## Runtime gotchas (Spectre 21.1)
+
+Field notes absorbed from the virtuoso-bridge-lite project's spectre skill (Spectre 21.1 + IC618 lab cluster) — silent or near-silent foot-guns, each with the avoidance that fits this package's workflow:
+
+- **Never pass `-param X=Y` on the spectre command line.** Spectre 21.1 parses the value as a second input netlist and dies with `SPECTRE-132: input file has been re-specified as 'X=Y'`. Bake parameter values into the netlist instead — exactly what the `@@PARAM@@` per-point replacement already does.
+- **A `parameters` re-declaration after an `include` does not update dependent expressions.** When an included header declares `parameters N=64 t_end=((N+N_extra)/Fs)` and the main netlist later re-declares `N=256`, `N` updates but `t_end` stays eagerly bound to the first value — symptom: a tran that stops far too early. Edit the `parameters` line inside the included file itself.
+- **600 s per point is short for noisy long transients.** With `tranNoise=yes`, long strobed runs, or heavy parallel/license contention, a healthy run can exceed the default wall time while still progressing — raise `timeout_per_point` rather than trusting the default (the worker's one-shot license/raw extensions only buy +120 s each).
+- **PSF signal names keep their `\<\>` escape characters.** A saved `DOUT\<0\>` parses to the literal key `DOUT\<0\>`, not `DOUT<0>` — a `KeyError` on a correct-looking save list usually means this. Quote names exactly in `--signals` and `metrics_required`.
+- **`strobeoutput=all` (psfascii) emits only the continuous tran stream**, not continuous + strobed as the documentation implies — roughly 140k samples per signal instead of the N strobed values. Use `strobeoutput=strobeonly` (which does work and shrinks the PSF by orders of magnitude) or strobe in post-processing.
+
 ## Cascade netlist assembly (netlist-level stitching)
 
 How to join multiple single-cell netlists into one cascade directly at the netlist level (no schematic). All simulations must be explicit about temperature (`temp=... tnom=...` in `simulatorOptions` and `temperature=...` in the `parameters` line — see `spectre-grammar.md`).
