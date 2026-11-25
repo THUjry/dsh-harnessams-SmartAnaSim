@@ -165,6 +165,7 @@ def run_single_point(work_dir, idx, params, config, spectre_cmd):
         "signals": {},
         "signals_available": [],
         "unresolved_placeholders": [],
+        "defaulted_params": [],
         "raw_dir": None,
         "command": "",
         "license_wait_extended": False,
@@ -174,7 +175,7 @@ def run_single_point(work_dir, idx, params, config, spectre_cmd):
     }
     try:
         with open(template, encoding="utf-8") as f:
-            text, unresolved = build_netlist(f.read(), params)
+            text, unresolved, defaulted = build_netlist(f.read(), params)
     except FileNotFoundError:
         msg = "netlist template not found: %s" % template
         write_errlog(work_dir, msg)
@@ -182,7 +183,10 @@ def run_single_point(work_dir, idx, params, config, spectre_cmd):
         result["finished_at"] = utc_now()
         atomic_write_json(os.path.join(pdir, "point_meta.json"), result)
         return result
+    # An undeclared @@temperature@@ resolved to the 27 degC default on the way
+    # in (point_meta.defaulted_params) — a warning, never a failed point.
     result["unresolved_placeholders"] = unresolved
+    result["defaulted_params"] = defaulted
     netlist_path = os.path.join(pdir, "netlist.scs")
     with open(netlist_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)

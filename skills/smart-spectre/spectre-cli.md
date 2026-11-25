@@ -12,7 +12,7 @@ A netlist runs headlessly with the raw CLI; psfascii raw output keeps the result
 
 Variant engines and threading mirror `spectre_args` in sweep_config.json (e.g. `++aps +mt -env ade`). Each analysis instance writes one raw file named after it — keep the `sp` instance name bare so S-parameter outputs land in `sp.sp` exactly where the parsers look (see `spectre-grammar.md`). For automated point sweeps use the sweep worker below instead of shell loops; for reading results with plain python see the analysis-scripts section.
 
-## Writing the run directory (hand-write + `spectre_pre_check`)
+## Writing the run directory (hand-write)
 
 The recommended flow hand-writes the run-directory inputs — `template*.scs` + `sweep_config.json` — following the reference designs (the suite's dca-cell-design skill and its sky130 example templates) and this contract. The suite's project self-check ships a worked example (an ideal-component RC testbench); its low-pass pair is the minimal reference shape:
 
@@ -24,7 +24,7 @@ V1 (vin 0) vsource dc=0 mag=1
 R1 (vin vout) resistor r=r_val
 C1 (vout 0) capacitor c=c_val
 save vout
-ac ac start=1e+03 stop=1e+08 dec=50
+ac ac start=1k stop=100M dec=50
 ```
 
 ```json
@@ -38,9 +38,9 @@ ac ac start=1e+03 stop=1e+08 dec=50
 }
 ```
 
-The `@@P@@` markers live on the `parameters` statement ONLY (the sole exemption: `@@temperature@@` on a simulatorOptions line); the circuit references parameters by name. The worker substitutes the per-point values into the parameters line, so the circuit body stays valid Spectre for every point of the sweep.
+The `@@P@@` markers live on the `parameters` statement ONLY (the sole exemption: `@@temperature@@` on a simulatorOptions line); the circuit references parameters by name. The worker substitutes the per-point values into the parameters line, so the circuit body stays valid Spectre for every point of the sweep. Numbers are plain decimals or SI-suffixed (`1k`, `56f`, `100M`) — no scientific notation anywhere in the netlist — and ideal R/C/L value positions take a literal or a bare parameter name (never an expression: reference `c=cpf` and put the scale in suffixed sweep values like `"56f"`). When the sweep config omits `temperature`, the worker fills the default 27 degC (the pre-check warns; the run never fails on a missing temperature).
 
-`spectre_pre_check {run_dir}` validates a hand-written directory before submission (pure JS — nothing executes, nothing is written): language format, sweep-parameter presence, and the value gates; the concrete rules are the syntax section of `spectre-grammar.md`. The HarnessAMS `batch_submit` tool runs the same check automatically before staging anything and fails with the findings — an explicit `no_pre_check: true` waives it after reviewing the failure report. Check parameters resolve per session: built-in defaults <- the project's optional `.harnessams/check_params.json` <- the calling session's optional confirmed table (`.harnessams/sessions.json`); absent stores fail open.
+`spectre_pre_check {run_dir}` validates a hand-written directory (pure JS — nothing executes, nothing is written): language format, sweep-parameter presence, and the value gates; the concrete rules are the syntax section of `spectre-grammar.md`. The HarnessAMS `batch_submit` tool runs the same check automatically before staging anything and fails with the findings — an explicit `no_pre_check: true` waives it after reviewing the failure report, so a separate pre-run before submitting is a re-run of the same check, not a pipeline step. Check parameters resolve per session: built-in defaults <- the project's optional `.harnessams/check_params.json` <- the calling session's optional confirmed table (`.harnessams/sessions.json`); absent stores fail open.
 
 ### The optional gen-script path (legacy)
 
@@ -48,7 +48,7 @@ Projects that prefer scripted assembly may still ship `script/analysis/gen_*.py`
 
 ## Run-directory contract (what the worker writes)
 
-Per point `NN/`: `netlist.scs`, `netlist.scs.raw/` (psfascii; `sp.sp` for S-parameter analyses), `spectre.out`, `NN/point_meta.json` — key fields: `point_index, point_name, simulator, params, status (success|partial|failure|timeout|error), returncode, elapsed_sec, error_message, signals, raw_dir, command, started_at, finished_at`. Run-directory level: `sweep_progress.json` (rewritten every ~30 s and once at the end, atomic tmp+replace: `{status: running|completed|failed, total_points, completed, succeeded, failed, compute_node, simulator, parameters, points: [{index, point_name, status, elapsed_sec, params, error}], updated_at}`), `.worker_started` `{pid, host, started_at, total_points}`, `.compute_node` (plain hostname), `.simulator`, `errlog.txt` (startup/config/template/executable errors — never throws). These files are the ground truth for interpreting a run; the tools and scripts below consume them.
+Per point `NN/`: `netlist.scs`, `netlist.scs.raw/` (psfascii; `sp.sp` for S-parameter analyses), `spectre.out`, `NN/point_meta.json` — key fields: `point_index, point_name, simulator, params, status (success|partial|failure|timeout|error), returncode, elapsed_sec, error_message, signals, raw_dir, command, unresolved_placeholders, defaulted_params (an undeclared @@temperature@@ resolved as the 27 degC default), started_at, finished_at`. Run-directory level: `sweep_progress.json` (rewritten every ~30 s and once at the end, atomic tmp+replace: `{status: running|completed|failed, total_points, completed, succeeded, failed, compute_node, simulator, parameters, points: [{index, point_name, status, elapsed_sec, params, error}], updated_at}`), `.worker_started` `{pid, host, started_at, total_points}`, `.compute_node` (plain hostname), `.simulator`, `errlog.txt` (startup/config/template/executable errors — never throws). These files are the ground truth for interpreting a run; the tools and scripts below consume them.
 
 ## Sweep worker (`spectre/spectre_sweep_worker.py`)
 
@@ -126,7 +126,7 @@ Field notes absorbed from the virtuoso-bridge-lite project's spectre skill (Spec
 
 ## Cascade netlist assembly (netlist-level stitching)
 
-How to join multiple single-cell netlists into one cascade directly at the netlist level (no schematic). All simulations must be explicit about temperature (`temp=... tnom=...` in `simulatorOptions` and `temperature=...` in the `parameters` line — see `spectre-grammar.md`).
+How to join multiple single-cell netlists into one cascade directly at the netlist level (no schematic). All simulations must be explicit about temperature (`temp=... tnom=...` in `simulatorOptions` and `temperature=...` in the `parameters` line — see `spectre-grammar.md`; a sweep config that omits `temperature` gets the worker's 27 degC default).
 
 ### 1. Wrap each cell as a `subckt` (device values hardcoded)
 

@@ -2,9 +2,12 @@
 // workflow hand-writes the run directory (template*.scs + sweep_config.json);
 // this module is the gate that keeps those netlists honest without any python
 // on the tool path: language format (lang declaration, SPICE-directive
-// rejection, LF/ASCII hygiene, @@P@@ placement), sweep-parameter presence, and
-// the value gates (ideal R/C/L ranges, nf/m multiplier ranges, geometry unit
-// suffixes). check parameters resolve through the same chain the retired
+// rejection, LF/ASCII hygiene, @@P@@ placement, no scientific notation — SI
+// suffixes only), sweep-parameter presence (an undeclared @@temperature@@ is a
+// warning: the worker fills the default 27 degC), and the value gates (ideal
+// R/C/L ranges on literals and parameter names — expressions at R/C/L value
+// positions are rejected, nf/m multiplier ranges, geometry unit suffixes).
+// check parameters resolve through the same chain the retired
 // python assembly layer used: built-in defaults <- <workspace>/.harnessams/
 // check_params.json <- the calling session's confirmed table in sessions.json
 // (fail-open per key; mirrors scripts/common/common_workspace.py). The check
@@ -127,7 +130,10 @@ const RCL_ATTR_VALUE = /\b([rcl])\s*=\s*(\S+)/g
 const LITERAL_LENGTH = /\b(l|w|lr|wr|rl|rw)\s*=\s*([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)(?![0-9a-zA-Z_.])/i
 const GEOM_NAME_REF = /\b(l|w|lr|wr|rl|rw)\s*=\s*([A-Za-z_]\w*)\b/gi
 const MULT_ATTR_RE = { nf: /\bnf\s*=\s*(\S+)/g, m: /\bm\s*=\s*(\S+)/g }
-const IDENTIFIER = /\b[A-Za-z_]\w*\b/g
+// Scientific notation anywhere on a code line (comments already stripped):
+// number-shaped only — the lookbehind keeps identifier tails (a net named
+// 'n1e5') out of the match, so '1e-15', '2.5e-4' and '1e+03' all flag.
+const SCI_NOTATION = /(?<![A-Za-z0-9_.])\d+(?:\.\d+)?[eE][+-]?\d+/
 const TEMPLATE_NAME_RE = /^template[\w.-]*\.scs$/
 
 const g = (n) => String(Number(Number(n).toPrecision(6)))
@@ -236,6 +242,13 @@ function checkLanguage(text, raw, code, templateName) {
       }
     }
   }
+  // Scientific notation is banned in netlists (2026-11-25 ruling): every
+  // number is a plain decimal or carries an explicit SI suffix, so no scale
+  // factor can hide in an exponent form (the retired c=(cpf*1e-15) idiom).
+  for (const l of code) {
+    const m = SCI_NOTATION.exec(l.s)
+    if (m) errors.push(`format: scientific notation '${m[0]}' at line ${l.n} — netlists use SI suffixes (1f, 100M, 200u) or plain decimals, never exponent form`)
+  }
   const nSub = code.filter((l) => /^(inline\s+)?subckt\b/i.test(l.s)).length
   const nEnds = code.filter((l) => /^ends\b/i.test(l.s)).length
   if (nSub !== nEnds) errors.push(`format: subckt(${nSub}) and ends(${nEnds}) counts do not pair`)
@@ -272,9 +285,14 @@ function checkSweepParams(code, config) {
   for (const l of code) for (const m of l.s.matchAll(PLACEHOLDER)) used.add(m[1])
   if (parameters) {
     const declared = new Set(Object.keys(parameters))
-    const missing = [...used].filter((n) => !declared.has(n)).sort()
+    // Temperature is the one placeholder that may stay undeclared: the sweep
+    // worker fills the default 27 degC (2026-11-25 ruling — warn, never block).
+    const missing = [...used].filter((n) => !declared.has(n) && n !== 'temperature').sort()
     if (missing.length) {
       errors.push(`params: template placeholders not declared in sweep_config.parameters: ${missing.join(', ')} (unresolved placeholders reach spectre as literal text)`)
+    }
+    if (used.has('temperature') && !declared.has('temperature')) {
+      warnings.push('params: @@temperature@@ is not declared in sweep_config.parameters — the worker fills the default 27 (degC)')
     }
     const absent = [...declared].filter((n) => !used.has(n)).sort()
     if (absent.length) {
@@ -303,9 +321,6 @@ function checkValues(code, config, params) {
   const parameters = config && typeof config.parameters === 'object' && config.parameters ? config.parameters : null
   const templateParams = parseTemplateParams(code)
   const unitCheck = params.unit_check !== false
-  // Names referenced inside any parenthesized expression (e.g. c=(cpf*1e-15),
-  // dc=(1.8*SW)): the value's scale is unknown, so range checks skip them.
-  const exprNames = new Set()
   // Names already checked precisely at an ideal-RCL value position — the
   // prefix heuristic below skips them to avoid duplicate findings.
   const resolvedNames = new Set()
@@ -316,13 +331,6 @@ function checkValues(code, config, params) {
   // Config names whose values were already checked at an nf/m value position —
   // the exact-name config pass below skips them to avoid duplicate findings.
   const multChecked = new Set()
-
-  for (const l of code) {
-    if (/^parameters\b/i.test(l.s)) continue
-    for (const grp of l.s.matchAll(/\(([^)]*)\)/g)) {
-      for (const idm of grp[1].matchAll(IDENTIFIER)) exprNames.add(idm[0])
-    }
-  }
 
   for (const l of code) {
     if (/^parameters\b/i.test(l.s)) continue
@@ -338,9 +346,10 @@ function checkValues(code, config, params) {
         if (token.startsWith('@@')) continue // placement family reports it
         const num = parseIdealValue(token)
         if (num !== null) {
-          // r=0 is the idiomatic short (a through-path element in the shipped
-          // sky130 templates); the plausibility range applies above it
-          if (!(kind === 'r' && num === 0) && (num < lo || num > hi)) {
+          // 0 is the legal degenerate element (r=0/l=0 short, c=0 open — the
+          // 2026-11-25 r=0 ruling extended to every kind); the plausibility
+          // range applies above it
+          if (num !== 0 && (num < lo || num > hi)) {
             errors.push(`rcl: ${im[1]} (${im[3]}) ${attr}=${token} (${g(num)} ${RCL_UNIT[kind]}) outside the ideal range ${rangeText(kind, lo, hi)}`)
           }
           continue
@@ -353,17 +362,17 @@ function checkValues(code, config, params) {
           }
           for (const v of valuesFor(token, parameters, templateParams[token])) {
             const n = idealNumber(v)
-            if (n !== null && !(kind === 'r' && n === 0) && (n < lo || n > hi)) {
+            if (n !== null && n !== 0 && (n < lo || n > hi)) {
               errors.push(`rcl: ${im[1]} (${im[3]}) ${attr}=${token} value ${JSON.stringify(v)} outside the ideal range ${rangeText(kind, lo, hi)}`)
             }
           }
           continue
         }
-        for (const idm of token.matchAll(IDENTIFIER)) {
-          if (!Object.hasOwn(templateParams, idm[0])) {
-            errors.push(`params: ${im[1]} (${im[3]}) ${attr}=${token} references ${idm[0]}, which has no 'parameters' declaration`)
-          }
-        }
+        // Expressions are banned at ideal R/C/L value positions (2026-11-25
+        // ruling): their scale cannot be verified, and the retired exemption
+        // let whole fF-scale scans slip an nF-tightened bound. The value must
+        // be a literal or a bare parameter name with suffixed sweep values.
+        errors.push(`rcl: ${im[1]} (${im[3]}) ${attr}=${token} — expressions are not allowed at ideal R/C/L value positions; use ${attr}=<param> with suffixed sweep values`)
       }
     } else {
       // geometry on non-ideal-RCL lines: the metres trap. A bare number means
@@ -428,18 +437,20 @@ function checkValues(code, config, params) {
       }
     }
     // prefix heuristic (the user-facing "find the C-prefixed parameter and
-    // check it as a capacitor" net): applies only to parameters the netlist
-    // has NOT resolved precisely (bare-name RCL values) or pushed into an
-    // expression (scale unknown) — so the shipped cpf*1e-15 pattern is exempt.
+    // check it as a capacitor" net): applies to parameters the netlist has NOT
+    // resolved precisely at a bare-name RCL value (those skip to avoid
+    // duplicate findings). No expression exemption anymore (2026-11-25
+    // ruling): expressions at R/C/L value positions are errors, and a
+    // c/r/l-prefixed config value is checkable as-is wherever it is used.
     for (const [name, vals] of Object.entries(parameters)) {
       if (!/^[cCrRlL]/.test(name)) continue
-      if (exprNames.has(name) || resolvedNames.has(name) || geomChecked.has(name)) continue
+      if (resolvedNames.has(name) || geomChecked.has(name)) continue
       if (LENGTH_ATTRS.has(name)) continue
       const kind = name[0].toLowerCase()
       const [lo, hi] = params.rcl[kind]
       for (const v of (Array.isArray(vals) ? vals : [vals])) {
         const n = idealNumber(v)
-        if (n !== null && !(kind === 'r' && n === 0) && (n < lo || n > hi)) {
+        if (n !== null && n !== 0 && (n < lo || n > hi)) {
           errors.push(`rcl: swept parameter ${name} value ${JSON.stringify(v)} outside the ideal ${kind.toUpperCase()} range ${rangeText(kind, lo, hi)} (name starts with '${name[0]}')`)
         }
       }

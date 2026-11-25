@@ -10,19 +10,26 @@ Checks:
 - the netlist must declare ``simulator lang=spectre``;
 - SPICE-only directives (.control/.endc/.end/.lib/.option/.include/.param) are
   rejected;
+- no scientific notation anywhere on a code line — netlists use SI suffixes
+  (1f, 100M, 200u) or plain decimals, never exponent form (2026-11-25 ruling:
+  no scale factor may hide in an exponent);
 - subckt/ends counts pair;
 - @@PARAM@@ placeholders live on the ``parameters`` statement ONLY (the sole
   exemption: @@temperature@@ on a simulatorOptions line); anywhere else is an
   error — the circuit references parameters by name;
 - every swept parameter needs its @@P@@ placeholder in the template, and every
   placeholder its config entry (the worker only substitutes config parameters);
+  an undeclared @@temperature@@ is a WARNING — the worker fills the default
+  27 degC, so a missing temperature never aborts the simulation;
 - ideal resistor/capacitor/inductor instance values must sit inside the
   plausibility ranges (R 0.1..1M ohm, C 1f..1u farad, L 0.1p..10n henry,
   inclusive). Literals and name references are checked (a name resolves to the
-  swept values plus the template's declared default); the config-side prefix
-  heuristic (C/R/L-initial names) covers parameters the circuit has not
-  resolved precisely; parameters used inside expressions are skipped (unknown
-  scale). ``m``/``M`` follow Spectre case sensitivity (m=1e-3, M=1e6);
+  swept values plus the template's declared default); expressions at R/C/L
+  value positions are REJECTED (2026-11-25 ruling — the retired exemption let
+  fF-scale scans slip an nF-tightened bound); the config-side prefix heuristic
+  (C/R/L-initial names) covers parameters the circuit has not resolved
+  precisely, with no expression exemption anymore. ``m``/``M`` follow Spectre
+  case sensitivity (m=1e-3, M=1e6);
 - multiplier attributes ``nf``/``m`` (device fingers, instance multiplier)
   must be positive integers inside the mult ranges;
 - ``l|w|lr|wr|rl|rw`` swept name values must be u/n-suffixed strings, never
@@ -106,6 +113,10 @@ _LITERAL_LENGTH = re.compile(r"\b(l|w|lr|wr|rl|rw)\s*=\s*"
                              r"(?![0-9a-zA-Z_.])")
 _GEOM_NAME_REF = re.compile(r"\b(l|w|lr|wr|rl|rw)\s*=\s*([A-Za-z_]\w*)\b", re.I)
 _IDENTIFIER = re.compile(r"\b[A-Za-z_]\w*\b")
+# Scientific notation anywhere on a code line (comments already stripped):
+# number-shaped only — the lookbehind keeps identifier tails (a net named
+# 'n1e5') out of the match, so '1e-15', '2.5e-4' and '1e+03' all flag.
+_SCI_NOTATION = re.compile(r"(?<![A-Za-z0-9_.])\d+(?:\.\d+)?[eE][+-]?\d+")
 
 
 def parse_ideal_value(text):
@@ -193,6 +204,16 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                               "netlist (line %d)" % (directive, n))
                 break
 
+    # Scientific notation is banned in netlists (2026-11-25 ruling): every
+    # number is a plain decimal or carries an explicit SI suffix, so no scale
+    # factor can hide in an exponent form (the retired c=(cpf*1e-15) idiom).
+    for n, s in code:
+        m = _SCI_NOTATION.search(s)
+        if m:
+            errors.append("format: scientific notation %r at line %d — netlists use SI "
+                          "suffixes (1f, 100M, 200u) or plain decimals, never exponent form"
+                          % (m.group(0), n))
+
     n_sub = sum(1 for _, s in code if re.match(r"^(inline\s+)?subckt\b", s, re.I))
     n_ends = sum(1 for _, s in code if re.match(r"^ends\b", s, re.I))
     if n_sub != n_ends:
@@ -226,10 +247,17 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
         used.update(_PLACEHOLDER.findall(s))
     if parameters is not None:
         declared = set(parameters.keys())
-        missing = sorted(used - declared)
+        # Temperature is the one placeholder that may stay undeclared: the
+        # sweep worker fills the default 27 degC (2026-11-25 ruling — warn,
+        # never block).
+        missing = sorted(name for name in used - declared if name != "temperature")
         if missing:
             errors.append("params: template placeholders not declared in "
                           "sweep_config.parameters: %s" % ", ".join(missing))
+        if "temperature" in used and "temperature" not in declared:
+            warnings.append("params: @@temperature@@ is not declared in "
+                            "sweep_config.parameters — the worker fills the "
+                            "default 27 (degC)")
         absent = sorted(declared - used)
         if absent:
             errors.append("params: swept parameters without a @@P@@ placeholder in "
@@ -256,14 +284,8 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
             for am in _PARAM_ASSIGN.finditer(pm.group(1)):
                 template_params[am.group(1)] = am.group(2)
 
-    # Names referenced inside any parenthesized expression (c=(cpf*1e-15),
-    # dc=(1.8*SW)): the value's scale is unknown, so range checks skip them.
-    expr_names = set()
-    for _, s in code:
-        if re.match(r"^parameters\b", s, re.I):
-            continue
-        for grp in re.findall(r"\(([^)]*)\)", s):
-            expr_names.update(_IDENTIFIER.findall(grp))
+    # Names already checked precisely at an ideal-RCL value position — the
+    # prefix heuristic below skips them to avoid duplicate findings.
     resolved_names = set()
     geom_checked = set()
     mult_checked = set()
@@ -288,10 +310,11 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
         kind = _RCL_DEVICE.get(im.group(3).lower())
         if kind is not None:
             # ideal resistor/capacitor/inductor: value range gate (inclusive
-            # bounds). Literals, name references (swept values plus the declared
-            # default) and expression names are handled; non-literal forms are
-            # skipped, not guessed. The range text follows the ACTIVE range so
-            # the message always matches what was enforced.
+            # bounds). Literals and name references (swept values plus the
+            # declared default) are handled; anything else — an expression —
+            # is REJECTED (2026-11-25 ruling: the scale cannot be verified).
+            # The range text follows the ACTIVE range so the message always
+            # matches what was enforced.
             lo, hi = ranges[kind]
             range_text = _range_text(kind, lo, hi)
             for am in _RCL_ATTR_VALUE.finditer(s):
@@ -302,9 +325,10 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                     continue  # the placement pass above reports it
                 num = parse_ideal_value(token)
                 if num is not None:
-                    # r=0 is the idiomatic short (a through-path element in
-                    # the shipped sky130 templates); the range applies above it
-                    if not (kind == "r" and num == 0) and not lo <= num <= hi:
+                    # 0 is the legal degenerate element (r=0/l=0 short, c=0
+                    # open — the 2026-11-25 r=0 ruling extended to every
+                    # kind); the range applies above it
+                    if num != 0 and not lo <= num <= hi:
                         errors.append("rcl: %s (%s) %s=%s (%g %s) outside the ideal range %s"
                                       % (im.group(1), im.group(3), attr, token, num,
                                          _RCL_UNIT[kind], range_text))
@@ -318,17 +342,14 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                         continue
                     for value in _values_for(token):
                         num = _ideal_number(value)
-                        if (num is not None and not (kind == "r" and num == 0)
-                                and not lo <= num <= hi):
+                        if num is not None and num != 0 and not lo <= num <= hi:
                             errors.append("rcl: %s (%s) %s=%s value %r outside the ideal "
                                           "range %s" % (im.group(1), im.group(3), attr,
                                                         token, value, range_text))
                     continue
-                for ident in _IDENTIFIER.findall(token):
-                    if ident not in template_params:
-                        errors.append("params: %s (%s) %s=%s references %s, which has no "
-                                      "'parameters' declaration"
-                                      % (im.group(1), im.group(3), attr, token, ident))
+                errors.append("rcl: %s (%s) %s=%s — expressions are not allowed at ideal "
+                              "R/C/L value positions; use %s=<param> with suffixed sweep "
+                              "values" % (im.group(1), im.group(3), attr, token, attr))
         else:
             # geometry on non-ideal-RCL lines: the metres trap. A bare number
             # means metres (warning); a swept name must carry u/n suffixes
@@ -388,14 +409,16 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                 if bad:
                     errors.append("mult: swept parameter %s value %r %s" % (attr, value, bad))
         # prefix heuristic (the "find the C-prefixed parameter and check it as
-        # a capacitor" net): applies only to parameters the netlist has NOT
-        # resolved precisely (bare-name RCL values) or pushed into an
-        # expression (scale unknown) — so the cpf*1e-15 pattern is exempt.
+        # a capacitor" net): applies to parameters the netlist has NOT resolved
+        # precisely at a bare-name R/C/L value (those skip to avoid duplicate
+        # findings). No expression exemption anymore (2026-11-25 ruling):
+        # expressions at R/C/L value positions are errors, and a c/r/l-prefixed
+        # config value is checkable as-is wherever it is used.
         for name in sorted(parameters.keys()):
             if not re.match(r"^[cCrRlL]", name):
                 continue
-            if (name in expr_names or name in resolved_names
-                    or name in geom_checked or name in _LENGTH_ATTRS):
+            if (name in resolved_names or name in geom_checked
+                    or name in _LENGTH_ATTRS):
                 continue
             kind = name[0].lower()
             lo, hi = ranges[kind]
@@ -403,8 +426,7 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
             vals = parameters[name]
             for value in (vals if isinstance(vals, (list, tuple)) else [vals]):
                 num = _ideal_number(value)
-                if (num is not None and not (kind == "r" and num == 0)
-                        and not lo <= num <= hi):
+                if num is not None and num != 0 and not lo <= num <= hi:
                     errors.append("rcl: swept parameter %s value %r outside the ideal %s "
                                   "range %s (name starts with '%s')"
                                   % (name, value, kind.upper(), range_text, name[0]))

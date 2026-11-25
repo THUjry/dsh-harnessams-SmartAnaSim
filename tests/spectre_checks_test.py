@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """Spectre netlist check tests: @@ placement (parameters-statement-only
-contract), sweep-parameter presence, ideal RCL ranges, multiplier (nf/m)
-gates, the geometry-suffix rules that share the same line pass, and the
+contract), the no-scientific-notation rule, sweep-parameter presence
+(undeclared @@temperature@@ = warning + worker default 27), ideal RCL ranges
+(expressions rejected at R/C/L positions, zero = legal degenerate), multiplier
+(nf/m) gates, the geometry-suffix rules that share the same line pass, and the
 check_params.json workspace defaults/switches (rcl / mult / unit_check).
 Run as a plain script; invoked by tests/spectre.test.mjs.
 
@@ -25,7 +27,8 @@ from spectre.spectre_checks import (  # noqa: E402
 SWEEP_PARAMS = {"r_val": ["1k", "2k", "5k"], "c_val": ["1n", "2n", "5n"]}
 
 # New-style template: @@P@@ placeholders ONLY on the parameters statement, the
-# circuit references parameters by name.
+# circuit references parameters by name, SI suffixes everywhere (no scientific
+# notation).
 GOOD = """\
 simulator lang=spectre
 parameters r_val=@@r_val@@ c_val=@@c_val@@ w_val=@@w_val@@ l_geo=@@l_geo@@
@@ -38,7 +41,7 @@ Cload (vout 0) cap c=1u
 Lser (vin mid) inductor l=0.1p
 Ltank (mid 0) ind l=10n
 M1 (d g s b) nmos w=w_val l=l_geo
-ac ac start=1e3 stop=1e9 dec=50
+ac ac start=1k stop=1G dec=50
 save vout
 """
 GOOD_PARAMS = dict(SWEEP_PARAMS, w_val=["2u"], l_geo=["180n"])
@@ -99,15 +102,46 @@ def test_out_of_range_literals():
         errs = [e for e in errors_of(t) if e.startswith("rcl:")]
         assert len(errs) == 1, "expected exactly one rcl error for %r, got %r" % (line, errs)
         assert name in errs[0] and "outside the ideal range" in errs[0], errs[0]
-    # r=0 is the idiomatic short (a through-path element in the shipped
-    # sky130 templates), exempt from the floor
-    assert errors_of("simulator lang=spectre\nR1 (a b) resistor r=0\n") == []
+    # 0 is the legal degenerate element for every kind (r=0/l=0 short, c=0
+    # open — the 2026-11-25 r=0 ruling extended), exempt from the floor
+    assert errors_of("simulator lang=spectre\nR1 (a b) resistor r=0\n"
+                     "C1 (a b) capacitor c=0\nL1 (a b) inductor l=0\n") == []
 
 
 def test_case_sensitive_milli_vs_mega():
     assert errors_of("simulator lang=spectre\nR1 (a b) resistor r=500m\n") == []  # 0.5 ohm
     errs = errors_of("simulator lang=spectre\nR1 (a b) resistor r=500M\n")
     assert any(e.startswith("rcl:") for e in errs), errs  # 500M = 5e8 ohm > ceiling
+
+
+def test_no_scientific_notation():
+    """Exponent forms flag on any code line; identifier tails do not match."""
+    t = ("simulator lang=spectre\nsimulatorOptions options reltol=2e-4\n"
+         "C1 (a b) capacitor c=1.5e-13\nsp sp start=1e9 stop=40G step=100M\n")
+    errs = [e for e in errors_of(t) if "scientific notation" in e]
+    assert len(errs) == 3, errs
+    assert any("'2e-4'" in e for e in errs), errs
+    assert any("'1.5e-13'" in e for e in errs), errs
+    # identifier-shaped tails (nets named n1e5 / b2e7) are not exponent matches
+    assert errors_of("simulator lang=spectre\nR1 (n1e5 b) resistor r=1k\n"
+                     "R2 (n1e5 b2e7) resistor r=2k\n") == []
+
+
+def test_undeclared_temperature_warns():
+    """An undeclared @@temperature@@ is a warning (worker default 27 degC),
+    never an error; every other undeclared placeholder stays an error."""
+    t = ("simulator lang=spectre\nsimulatorOptions options temp=@@temperature@@ reltol=200u\n"
+         "parameters temperature=27 SW=@@SW@@\nVSW (sw 0) vsource dc=(1.8*SW)\n")
+    errs, warns = check_netlist_format(t, parameters={"SW": [0, 1]})
+    assert errs == [], errs
+    assert any("@@temperature@@" in w and "27" in w for w in warns), warns
+    # declared temperature: no warning at all
+    errs, warns = check_netlist_format(t, parameters={"temperature": [27], "SW": [0, 1]})
+    assert errs == [] and warns == [], (errs, warns)
+    # other undeclared placeholders stay errors
+    t2 = "simulator lang=spectre\nparameters SW=@@SW@@ OTHER=@@OTHER@@\nV1 (a 0) vsource dc=SW\n"
+    errs = errors_of(t2, parameters={"SW": [0, 1]})
+    assert any("placeholders not declared" in e and "OTHER" in e for e in errs), errs
 
 
 def test_placeholder_placement():
@@ -119,14 +153,14 @@ def test_placeholder_placement():
     assert any(e.startswith("format:") and "outside the parameters statement" in e
                for e in errs), errs
     t2 = ("simulator lang=spectre\n"
-          "simulatorOptions options temp=@@temperature@@ reltol=2e-4\n"
+          "simulatorOptions options temp=@@temperature@@ reltol=200u\n"
           "parameters temperature=27\n")
     assert errors_of(t2, parameters={"temperature": [27]}) == [], errors_of(t2)
     t3 = "simulator lang=spectre\nsimulatorOptions options temp=@@FSTART@@\n"
     errs = errors_of(t3)
     assert any("@@FSTART@@ outside the parameters statement" in e for e in errs), errs
     # analysis statements are circuit-side: no @@ there either
-    t4 = "simulator lang=spectre\nac ac start=@@FSTART@@ stop=1e9 dec=50\n"
+    t4 = "simulator lang=spectre\nac ac start=@@FSTART@@ stop=1G dec=50\n"
     errs = errors_of(t4)
     assert any("outside the parameters statement" in e for e in errs), errs
 
@@ -165,11 +199,12 @@ def test_swept_name_reference_values():
     t3 = ("simulator lang=spectre\nparameters rload=rbase*2\n"
           "R1 (a b) resistor r=rload\n")
     assert errors_of(t3) == []
-    # expression values referencing undeclared names are errors
+    # expressions at R/C/L value positions are rejected outright (2026-11-25
+    # ruling)
     t4 = ("simulator lang=spectre\nparameters k=2\n"
           "R1 (a b) resistor r=(k*rx)\n")
     errs = errors_of(t4)
-    assert any("rx" in e and "no 'parameters' declaration" in e for e in errs), errs
+    assert any("expressions are not allowed" in e for e in errs), errs
 
 
 def test_multiplier_gates():
@@ -202,10 +237,19 @@ def test_prefix_heuristic():
     t = "simulator lang=spectre\nparameters Cload=@@Cload@@\n"
     errs = errors_of(t, parameters={"Cload": ["5u"]})
     assert any(e.startswith("rcl:") and "Cload" in e for e in errs), errs
-    # expression-referenced parameters are exempt (unknown scale)
+    # the retired c=(cpf*1e-15) pattern: the expression is an ERROR now, and
+    # the heuristic no longer exempts the c-prefixed name (its bare values
+    # read as base-unit farads and flag on their own)
     t2 = ("simulator lang=spectre\nparameters cpf=@@cpf@@\n"
           "Cp (a b) capacitor c=(cpf*1e-15)\n")
-    assert errors_of(t2, parameters={"cpf": [100, 200]}) == [], errors_of(t2)
+    errs = errors_of(t2, parameters={"cpf": [100, 200]})
+    assert any("expressions are not allowed" in e for e in errs), errs
+    assert any(e.startswith("rcl:") and "cpf" in e for e in errs), errs
+    # the new idiom: bare-name reference + suffixed sweep values, checked
+    # precisely by the bare-name path (c=0f degenerate point included)
+    t2b = ("simulator lang=spectre\nparameters cpf=@@cpf@@\n"
+           "Cp (a b) capacitor c=cpf\n")
+    assert errors_of(t2b, parameters={"cpf": ["0f", "56f", "150f"]}) == []
     # bare-name RCL references are checked precisely, without a duplicate
     # prefix finding
     t3 = "simulator lang=spectre\nparameters Cload=@@Cload@@\nC0 (a b) capacitor c=Cload\n"
@@ -447,6 +491,8 @@ def main():
         test_boundary_values_inclusive()
         test_out_of_range_literals()
         test_case_sensitive_milli_vs_mega()
+        test_no_scientific_notation()
+        test_undeclared_temperature_warns()
         test_placeholder_placement()
         test_sweep_param_presence()
         test_swept_name_reference_values()

@@ -15,27 +15,28 @@ V2 (SW AVSS) vsource dc=1.2*SW type=dc          // Spectre references SW directl
 V3 (SWB AVSS) vsource dc=1.2*(1-SW) type=dc     // Spectre evaluates the expression
 ```
 
-Only the `parameters` line needs `@@...@@` placeholders. `@@(\w+)@@` matches `[a-zA-Z0-9_]+` only — `@@1-SW@@` will not resolve; write `1-SW` in the instance line instead. `spectre_pre_check` enforces this placement: `@@...@@` anywhere outside the `parameters` statement is an error, with the single exemption of `@@temperature@@` on a `simulatorOptions` line (the shipped sky130 templates sweep it there — spectre does not reliably take a parameter reference in `simulatorOptions`).
+Only the `parameters` line needs `@@...@@` placeholders. `@@(\w+)@@` matches `[a-zA-Z0-9_]+` only — `@@1-SW@@` will not resolve; write `1-SW` in the instance line instead. `spectre_pre_check` enforces this placement: `@@...@@` anywhere outside the `parameters` statement is an error, with the single exemption of `@@temperature@@` on a `simulatorOptions` line (the shipped sky130 templates carry it there — spectre does not reliably take a parameter reference in `simulatorOptions`). An undeclared `@@temperature@@` is a WARNING, not an error: the sweep worker substitutes the default 27 degC, so a netlist missing its temperature entry never fails the run.
 
 ## Spectre vs SPICE rules (enforced by spectre_pre_check)
 
 - `simulator lang=spectre` must lead the netlist; SPICE-only directives are rejected: `.control` `.lib` `.include` `.param` `.model` `.tran` `.ac` `.dc`; the text is LF-only and pure ASCII
+- no scientific notation anywhere in the netlist — every number is a plain decimal or carries an explicit SI suffix (`1f`, `100M`, `200u`); `1e-15`-style exponents hide the scale and are rejected
 - `subckt`/`ends` must balance; Spectre-native statements carry no leading dot
-- template file names must match the `template*.scs` family; `@@P@@` placement (parameters statement only, `@@temperature@@` on a simulatorOptions line exempt) and placeholder/config presence (both directions) are rejected when violated
+- template file names must match the `template*.scs` family; `@@P@@` placement (parameters statement only, `@@temperature@@` on a simulatorOptions line exempt) and placeholder/config presence (both directions; undeclared `@@temperature@@` stays a warning — worker default 27 degC) are rejected when violated
 - unit suffixes — geometry values (`l` `w` `lr` `wr`...) must carry u/n suffixes; frequencies G/M/k; counts are non-negative integers
 - `m`/`M` are case-sensitive per Spectre: `1Meg`, never `1M`
-- ideal RCL ranges — R 0.1..1e6 ohm, C 1f..1uF, L 0.1p..10nH (literals, name-referenced swept values, and C/R/L-initial config names)
+- ideal RCL value positions accept a literal or a bare parameter name only — expressions (`c=(cpf*1f)` and the retired `c=(cpf*1e-15)`) are rejected: reference the parameter (`c=cpf`) and put the scale in suffixed sweep values (`"56f"`). Ranges: R 0.1..1e6 ohm, C 1f..1uF, L 0.1p..10nH (literals, name-referenced swept values, and C/R/L-initial config names); r/c/l = 0 is the legal degenerate element (short / open)
 - multiplier ranges — `nf` (device fingers) and `m` (instance multiplier) must be positive integers: nf 1..128, m 1..1000
 
 ## Analysis statements — shared rules
 
 - **Each analysis instance writes one psfascii raw file named after it** (under the point's `netlist.scs.raw/`): keep the `sp` instance name bare (`sp sp start=... stop=...`) so S-parameter outputs land in `sp.sp` — an instance name like `sp1` writes `sp1.sp`, which the parse path does not pick up.
-- **Explicit temperature always**: `temp=... tnom=...` in `simulatorOptions` and `temperature=...` in the `parameters` line.
+- **Explicit temperature always**: `temp=... tnom=...` in `simulatorOptions` and `temperature=...` in the `parameters` line. When the sweep config omits `temperature`, the worker fills `temp=27` (degC) and the pre-check warns — the run never fails on a missing temperature.
 - **`save` controls what is written**: `save vout` (single nets) or `save OUT AVSS` (cascade style); unsaved signals do not reach the raw file.
 
 ## AC analysis (`ac`)
 
-Small-signal analysis around the DC operating point: `ac ac start=1e+03 stop=1e+08 dec=50` (`dec=N` per decade; `step=` for linear grids). The excitation is the source's small-signal magnitude — spectre `vsource` has **no `ac=` parameter**: set `mag=1` on the source (`V1 (vin 0) vsource dc=0 mag=1`) and read the response as a complex phasor per frequency.
+Small-signal analysis around the DC operating point: `ac ac start=1k stop=100M dec=50` (`dec=N` per decade; `step=` for linear grids). The excitation is the source's small-signal magnitude — spectre `vsource` has **no `ac=` parameter**: set `mag=1` on the source (`V1 (vin 0) vsource dc=0 mag=1`) and read the response as a complex phasor per frequency.
 
 ## S-parameter analysis (`sp`)
 

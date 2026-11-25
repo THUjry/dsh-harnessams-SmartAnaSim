@@ -3,7 +3,11 @@
 
 Mechanisms:
 - @@PARAM@@ template substitution (@@name@@ or @@name:format@@; unknown
-  placeholders stay in place and are recorded in point_meta.unresolved_placeholders);
+  placeholders stay in place and are recorded in point_meta.unresolved_placeholders,
+  except the temperature default below);
+- temperature default (2026-11-25 ruling): an undeclared @@temperature@@ is
+  substituted as 27 degC and recorded in point_meta.defaulted_params — a
+  missing temperature never aborts the simulation;
 - combination generation via itertools (cross_product by default, zip for
   equal-length lists);
 - zero-padded point directory names (00, 01, ...; plain decimal from 100 on);
@@ -24,6 +28,12 @@ from common.common_workspace import atomic_write_json, utc_now, write_errlog
 
 PARAM_RE = re.compile(r"@@(\w+)(?::([^@]*))?@@")
 PROGRESS_PERIOD_SEC = 30
+
+# Placeholders that resolve without a sweep entry (2026-11-25 ruling): an
+# undeclared @@temperature@@ becomes 27 degC instead of literal text reaching
+# spectre — a missing temperature is a warning (spectre_pre_check), never an
+# aborted simulation. Other unknown placeholders stay unresolved.
+DEFAULT_PARAMS = {"temperature": 27}
 
 
 def generate_combinations(config):
@@ -51,21 +61,33 @@ def generate_combinations(config):
 
 
 def build_netlist(text, params):
-    """Substitute @@PARAM@@ placeholders; returns (netlist, unresolved names)."""
+    """Substitute @@PARAM@@ placeholders.
+
+    Returns (netlist, unresolved names, defaulted names): an undeclared
+    temperature falls back to DEFAULT_PARAMS (27 degC) and lands in the
+    defaulted list; every other unknown placeholder stays in place and is
+    recorded as unresolved (it reaches spectre as literal text).
+    """
     unresolved = []
+    defaulted = []
 
     def repl(m):
         name, fmt = m.group(1), m.group(2)
         if name not in params:
-            unresolved.append(name)
-            return m.group(0)
-        val = params[name]
+            if name in DEFAULT_PARAMS:
+                defaulted.append(name)
+                val = DEFAULT_PARAMS[name]
+            else:
+                unresolved.append(name)
+                return m.group(0)
+        else:
+            val = params[name]
         try:
             return format(val, fmt) if fmt else str(val)
         except (ValueError, TypeError):
             return str(val)
 
-    return PARAM_RE.sub(repl, text), unresolved
+    return PARAM_RE.sub(repl, text), unresolved, defaulted
 
 
 def point_name(idx):
@@ -184,7 +206,8 @@ def load_point_metas(work_dir, combos):
 
 
 __all__ = [
-    "PARAM_RE", "PROGRESS_PERIOD_SEC", "generate_combinations", "build_netlist",
+    "PARAM_RE", "PROGRESS_PERIOD_SEC", "DEFAULT_PARAMS", "generate_combinations",
+    "build_netlist",
     "point_name", "init_worker_state", "write_simulator",
     "read_simulator", "write_progress", "load_point_metas", "utc_now",
     "atomic_write_json", "write_errlog",

@@ -1,8 +1,10 @@
 // spectre_pre_check engine tests: the @@ placement contract (parameters-
-// statement-only, @@temperature@@ exemption on simulatorOptions), sweep-
-// parameter presence, ideal RCL / multiplier value gates, geometry unit
-// rules, and the check-parameter chain (builtin <- project <- session,
-// fail-open per key).
+// statement-only, @@temperature@@ exemption on simulatorOptions), the
+// no-scientific-notation rule, sweep-parameter presence (undeclared
+// @@temperature@@ = warning + worker default 27), ideal RCL / multiplier value
+// gates (expressions rejected at RCL positions, zero = legal degenerate),
+// geometry unit rules, and the check-parameter chain (builtin <- project <-
+// session, fail-open per key).
 import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -20,19 +22,20 @@ function makeRun(template, config) {
 const goodRc = makeRun(
   '// rc lpf\nsimulator lang=spectre\nparameters r_val=@@r_val@@ c_val=@@c_val@@\n'
   + 'V1 (vin 0) vsource dc=0 mag=1\nR1 (vin vout) resistor r=r_val\nC1 (vout 0) capacitor c=c_val\n'
-  + 'save vout\nac ac start=1e3 stop=1e8 dec=50\n',
+  + 'save vout\nac ac start=1k stop=100M dec=50\n',
   { parameters: { r_val: ['1k', '2k', '5k'], c_val: ['1n', '2n', '5n'] }, sweep_mode: 'cross_product', netlist_template: 'template.scs' })
 
 // The shipped sky130 template shape (template_T/ST/Pi family): @@temperature@@
-// on simulatorOptions, expression values, nf literals, the declaration line.
+// on simulatorOptions, bare-name capacitor with suffixed sweep values, nf
+// literals, the declaration line, SI suffixes everywhere.
 const templateTStyle = makeRun(
-  '// t-type\nsimulator lang=spectre\nsimulatorOptions options temp=@@temperature@@ reltol=2e-4\n'
+  '// t-type\nsimulator lang=spectre\nsimulatorOptions options temp=@@temperature@@ reltol=200u\n'
   + 'include "sky130_fd_pr__nfet_01v8_lvt.scs"\nparameters temperature=27 SW=@@SW@@ cpf=@@cpf@@\n'
-  + 'subckt att_t (in out sw swb)\nRs1 (in mid) resistor r=13.18\nCp (mid n2) capacitor c=(cpf*1e-15)\n'
+  + 'subckt att_t (in out sw swb)\nRs1 (in mid) resistor r=13.18\nCp (mid n2) capacitor c=cpf\n'
   + 'M1 (out gb in 0) nlowvt_model__w61p7nf31 l=0.15u w=61.7u nf=31 nrd=(0.14/61.7) nrs=(0.14/61.7) ad=0 as=0 pd=0 ps=0 sa=0 sb=0 sd=0\n'
   + 'ends att_t\nV1 (in 0) port num=1 z0=50\nX1 (in out sw vswb) att_t\nVSW (sw 0) vsource dc=(1.8*SW)\n'
-  + 'sp sp start=1e9 stop=40e9 step=100e6\n',
-  { parameters: { temperature: [27], SW: [0, 1], cpf: [100, 200, 400] }, sweep_mode: 'cross_product', netlist_template: 'template.scs' })
+  + 'sp sp start=1G stop=40G step=100M\n',
+  { parameters: { temperature: [27], SW: [0, 1], cpf: ['100f', '200f', '400f'] }, sweep_mode: 'cross_product', netlist_template: 'template.scs' })
 
 test('parseIdealValue / idealNumber: SI suffixes, m vs M case sensitivity', () => {
   assert.equal(parseIdealValue('1k'), 1e3)
@@ -77,10 +80,51 @@ test('@@ placement: parameters statement only, @@temperature@@ exempt on simulat
   assert.ok(r2.errors.some((e) => e.includes('@@FSTART@@ outside the parameters statement')), r2.errors)
 
   const badAnalysis = makeRun(
-    'simulator lang=spectre\nac ac start=@@FSTART@@ stop=1e9 dec=50\n',
+    'simulator lang=spectre\nac ac start=@@FSTART@@ stop=1G dec=50\n',
     { parameters: {} })
   const r3 = await runPreCheck(badAnalysis, null)
   assert.ok(r3.errors.some((e) => e.includes('outside the parameters statement')), r3.errors)
+})
+
+test('no scientific notation: exponent forms flag, identifier tails do not', async () => {
+  const sci = await runPreCheck(makeRun(
+    'simulator lang=spectre\nsimulatorOptions options reltol=2e-4\nC1 (a b) capacitor c=1.5e-13\nsp sp start=1e9 stop=40G step=100M\n',
+    { parameters: {} }), null)
+  const sciErrs = sci.errors.filter((e) => e.includes('scientific notation'))
+  assert.equal(sciErrs.length, 3, sciErrs)
+  assert.ok(sciErrs.some((e) => e.includes("'2e-4'")), sciErrs)
+  assert.ok(sciErrs.some((e) => e.includes("'1.5e-13'")), sciErrs)
+  assert.ok(sci.ok === false)
+
+  // identifier-shaped tails (a net named n1e5) are not exponent matches
+  const ident = await runPreCheck(makeRun(
+    'simulator lang=spectre\nR1 (n1e5 b) resistor r=1k\nR2 (n1e5 b2e7) resistor r=2k\n',
+    { parameters: {} }), null)
+  assert.deepEqual(ident.errors, [], ident.errors)
+})
+
+test('undeclared @@temperature@@ is a warning (worker default 27), never an error', async () => {
+  const missing = await runPreCheck(makeRun(
+    '// t-style\nsimulator lang=spectre\nsimulatorOptions options temp=@@temperature@@ reltol=200u\n'
+    + 'parameters temperature=27 SW=@@SW@@\nVSW (sw 0) vsource dc=(1.8*SW)\n',
+    { parameters: { SW: [0, 1] } }), null)
+  assert.equal(missing.ok, true, JSON.stringify(missing))
+  assert.deepEqual(missing.errors, [])
+  assert.ok(missing.warnings.some((w) => w.includes('@@temperature@@') && w.includes('27')), missing.warnings)
+
+  // declared temperature: no warning at all
+  const declared = await runPreCheck(makeRun(
+    'simulator lang=spectre\nsimulatorOptions options temp=@@temperature@@ reltol=200u\n'
+    + 'parameters temperature=27 SW=@@SW@@\nVSW (sw 0) vsource dc=(1.8*SW)\n',
+    { parameters: { temperature: [27], SW: [0, 1] } }), null)
+  assert.equal(declared.ok, true)
+  assert.deepEqual(declared.warnings, [])
+
+  // every other undeclared placeholder stays an error
+  const other = await runPreCheck(makeRun(
+    'simulator lang=spectre\nparameters SW=@@SW@@ OTHER=@@OTHER@@\nV1 (a 0) vsource dc=SW\n',
+    { parameters: { SW: [0, 1] } }), null)
+  assert.ok(other.errors.some((e) => e.includes('placeholders not declared') && e.includes('OTHER')), other.errors)
 })
 
 test('sweep-parameter presence: both directions, and undeclared name references', async () => {
@@ -125,10 +169,10 @@ test('swept name-reference values: ranges, numeric base units, declared defaults
   const rclErrs = def.errors.filter((e) => e.startsWith('rcl:'))
   assert.equal(rclErrs.length, 1)
   assert.ok(rclErrs[0].includes('rbork'), rclErrs)
-  // expression values referencing undeclared names are errors
+  // expressions at RCL value positions are rejected outright (2026-11-25 ruling)
   const expr = await runPreCheck(makeRun(
     'simulator lang=spectre\nparameters k=2\nR1 (a b) resistor r=(k*rx)\n', { parameters: {} }), null)
-  assert.ok(expr.errors.some((e) => e.includes('rx')), expr.errors)
+  assert.ok(expr.errors.some((e) => e.includes('expressions are not allowed')), expr.errors)
 })
 
 test('multiplier gates: literals, name references, config exact names, expressions skipped', async () => {
@@ -163,7 +207,7 @@ test('multiplier gates: literals, name references, config exact names, expressio
     'simulator lang=spectre\nparameters k=2\nR1 (a b) resistor r=1k m=(2*k)\n', { parameters: {} }), null)).ok, true)
 })
 
-test('prefix heuristic: C-initial config values, expression exemption, no duplicates', async () => {
+test('prefix heuristic: C-initial config values, expressions rejected, no duplicates', async () => {
   // r=0 is the idiomatic short, exempt from the resistor floor
   assert.equal((await runPreCheck(makeRun(
     'simulator lang=spectre\nRshort (in out) resistor r=0\n', { parameters: {} }), null)).ok, true)
@@ -172,10 +216,21 @@ test('prefix heuristic: C-initial config values, expression exemption, no duplic
     'simulator lang=spectre\nparameters Cload=@@Cload@@\n', { parameters: { Cload: ['5u'] } }), null)
   assert.ok(out.errors.some((e) => e.startsWith('rcl:') && e.includes('Cload')), out.errors)
 
-  // expression-referenced parameters are exempt (the cpf*1e-15 pattern)
-  assert.equal((await runPreCheck(makeRun(
+  // the retired c=(cpf*1e-15) pattern: the expression is an ERROR now, and the
+  // heuristic no longer exempts the c-prefixed name (its bare values read as
+  // base-unit farads and flag on their own)
+  const expr = await runPreCheck(makeRun(
     'simulator lang=spectre\nparameters cpf=@@cpf@@\nCp (a b) capacitor c=(cpf*1e-15)\n',
-    { parameters: { cpf: [100, 200] } }), null)).ok, true)
+    { parameters: { cpf: [100, 200] } }), null)
+  assert.ok(expr.errors.some((e) => e.includes('expressions are not allowed')), expr.errors)
+  assert.ok(expr.errors.some((e) => e.startsWith('rcl:') && e.includes('cpf')), expr.errors)
+  assert.equal(expr.ok, false)
+
+  // the new idiom: bare-name reference + suffixed sweep values, checked
+  // precisely by the bare-name path (c=0f degenerate point included)
+  assert.equal((await runPreCheck(makeRun(
+    'simulator lang=spectre\nparameters cpf=@@cpf@@\nCp (a b) capacitor c=cpf\n',
+    { parameters: { cpf: ['0f', '56f', '150f'] } }), null)).ok, true)
 
   // bare-name RCL references are checked precisely, without a duplicate finding
   const dup = await runPreCheck(makeRun(
@@ -187,6 +242,44 @@ test('prefix heuristic: C-initial config values, expression exemption, no duplic
   assert.equal((await runPreCheck(makeRun(
     'simulator lang=spectre\nparameters l_geo=@@l_geo@@\nM1 (d g s b) nmos l=l_geo w=1u\n',
     { parameters: { l_geo: ['180n'] } }), null)).ok, true)
+})
+
+test('zero is the legal degenerate element for every RCL kind', async () => {
+  assert.equal((await runPreCheck(makeRun(
+    'simulator lang=spectre\nR0 (a b) resistor r=0\nC0 (a b) capacitor c=0\nL0 (a b) inductor l=0\n',
+    { parameters: {} }), null)).ok, true)
+  // the degenerate point also rides through as a swept suffixed value
+  assert.equal((await runPreCheck(makeRun(
+    'simulator lang=spectre\nparameters cpf=@@cpf@@ l_val=@@l_val@@\nC0 (a b) capacitor c=cpf\nL0 (a b) inductor l=l_val\n',
+    { parameters: { cpf: ['0f'], l_val: ['0n'] } }), null)).ok, true)
+})
+
+test('regression: a session-tightened 1nF capacitor floor blocks the fF scan', async () => {
+  // The Check20261125_2 origin scenario, fixed: the netlist is the NEW idiom
+  // (c=cpf + suffixed values) and the session layer tightens c to [1n, 1uF] —
+  // every nonzero fF value must flag, so batch_submit's gate throws.
+  const ws = mkdtempSync(path.join(tmpdir(), 'hams-1nf-'))
+  mkdirSync(path.join(ws, '.harnessams'))
+  writeFileSync(path.join(ws, '.harnessams', 'sessions.json'), JSON.stringify({
+    version: 2, sessions: { sessTight: { check_params: { rcl: { c: [1e-9, 1e-6] } } } },
+  }))
+  const runDir = path.join(ws, 'run')
+  mkdirSync(runDir)
+  writeFileSync(path.join(runDir, 'template.scs'),
+    'simulator lang=spectre\nsimulatorOptions options temp=@@temperature@@ reltol=200u\n'
+    + 'parameters temperature=27 SW=@@SW@@ cpf=@@cpf@@\nCp1 (in n2) capacitor c=cpf\nRp1 (in n2) resistor r=60.62\n'
+    + 'VSW (sw 0) vsource dc=(1.8*SW)\n')
+  writeFileSync(path.join(runDir, 'sweep_config.json'),
+    JSON.stringify({ parameters: { SW: [0, 1], cpf: ['0f', '10f', '56f', '150f'] } }))
+
+  const r = await runPreCheck(runDir, 'sessTight')
+  assert.equal(r.params_source, 'session')
+  assert.equal(r.ok, false)
+  const flagged = r.errors.filter((e) => e.startsWith('rcl:') && e.includes('cpf'))
+  // 10f / 56f / 150f all sit below 1e-9; the 0f degenerate point stays legal
+  assert.equal(flagged.length, 3, flagged)
+  assert.ok(flagged.every((e) => e.includes('outside the ideal range')), flagged)
+  assert.ok(!r.errors.some((e) => e.includes('"0f"')), r.errors)
 })
 
 test('geometry rules: u/n suffix contract and the metres-trap warning', async () => {
