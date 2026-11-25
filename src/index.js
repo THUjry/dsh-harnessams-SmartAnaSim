@@ -16,6 +16,12 @@
 //                     text blocks (shell + Cadence SKILL) for the netlist <->
 //                     OA round trip and never execute anything (see
 //                     src/tools/vsch.js)
+//   post_check        On-demand simulation-data integrity diagnostics: the
+//                     collect-style sweep over a run directory (or one raw
+//                     dir) that folds parse errors and every strict-rule
+//                     violation into one classified report — call it when
+//                     results look wrong, not as routine pipeline (see
+//                     src/tools/post.js + scripts/spectre/spectre_post_check.py)
 //
 // Architecture: the netlist pre-check runs in-process (pure JS); every other
 // tool face spawns plain Python scripts shipped under scripts/ (worker and
@@ -34,6 +40,7 @@ import { registerTools } from './tool.js'
 import { spectreTools } from './tools/spectre.js'
 import { snpTools } from './tools/snp.js'
 import { vschTools } from './tools/vsch.js'
+import { postTools } from './tools/post.js'
 import { registerSkills } from './skills.js'
 
 export const name = 'dsh-harnessams-smart-ana-sim'
@@ -43,12 +50,13 @@ export const inject = ['tools', 'skills']
 
 // DSH-native per-family toggles (official tool-fs precedent): each family
 // registers only when its switch is not explicitly false (defaults keep
-// the full 6-tool surface). Changing the config hot-swaps the plugin: cordis
+// the full 7-tool surface). Changing the config hot-swaps the plugin: cordis
 // restarts the fiber and apply() re-registers with the new selection.
 export const Config = z.object({
   spectre: z.boolean().default(true).description('Register the spectre_* tool family (Spectre netlist pre-check).'),
   snp: z.boolean().default(true).description('Register the snp_* tool family (Touchstone reading / device extraction).'),
   vsch: z.boolean().default(true).description('Register the gen_vsch_* tool family (Virtuoso schematic import/export command assembly).'),
+  post: z.boolean().default(true).description('Register the post_check tool (on-demand simulation-data integrity diagnostics).'),
 })
 
 export function toolDefinitions(ctx = {}, config = {}) {
@@ -56,6 +64,7 @@ export function toolDefinitions(ctx = {}, config = {}) {
     ...(config.spectre !== false ? spectreTools() : []),
     ...(config.snp !== false ? snpTools() : []),
     ...(config.vsch !== false ? vschTools() : []),
+    ...(config.post !== false ? postTools() : []),
   ]
 }
 
