@@ -29,7 +29,9 @@ export function spectreTools() {
         + '27 degC), and the value gates from the workspace check-parameter chain (ideal R/C/L '
         + 'ranges on literals and parameter names — expressions at R/C/L value positions are '
         + 'rejected; nf/m multiplier ranges, u/n geometry suffixes; project check_params.json '
-        + 'plus the calling session\'s confirmed table). Pure checks — nothing executes. '
+        + 'plus the calling session\'s confirmed table). sweep_config.json shape: parameters is '
+        + 'a dict of value lists (SI-suffixed strings for swept R/C/L values), plus sweep_mode '
+        + 'and netlist_template. Pure checks — nothing executes. '
         + 'batch_submit runs this automatically before staging, so a direct call is a re-run '
         + 'of the same check, not a required pipeline step.',
       parameters: {

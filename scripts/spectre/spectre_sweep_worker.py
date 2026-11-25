@@ -297,6 +297,30 @@ def run_single_point(work_dir, idx, params, config, spectre_cmd):
     return result
 
 
+def probe_numpy_state():
+    """Numpy tri-state of THIS interpreter, for the toolchain telemetry (D-021).
+
+    "yes" = numpy imports natively; "fallback" = numpy is missing but the
+    staged numfallback asset (the pure-stdlib numpy shim at
+    <scripts root>/../assets, the same path convention snp_common resolves)
+    imports; "no" = neither works (e.g. a python 2 shell where even the
+    fallback has py3 syntax). Best-effort: never raises.
+    """
+    try:
+        import numpy  # noqa: F401
+        return "yes"
+    except Exception:
+        pass
+    assets = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "assets")
+    try:
+        if assets and assets not in sys.path:
+            sys.path.insert(0, assets)
+        import numfallback  # noqa: F401
+        return "fallback"
+    except Exception:
+        return "no"
+
+
 def resolve_spectre_cmd(config, work_dir, override=None):
     # chain: --spectre-cmd > sweep_config.spectre_cmd > PATH 'spectre' (the
     # workspace spectre_cmd layer retired with harnessams.json, 2026-11-19)
@@ -351,14 +375,18 @@ def main(argv=None):
         print(msg, file=sys.stderr)
         return 2
     spectre_cmd = probe
-    # toolchain telemetry (D-016/D-017): what THIS job really runs under — the
-    # interpreter (sys.executable), the resolved spectre binary, the hostname.
-    # sweep_progress.json carries it; a green self-check reads it back to pin
-    # the project (and remember the node) — measurement, never a guess.
+    # toolchain telemetry (D-016/D-017, numpy leg added D-021): what THIS job
+    # really runs under — the interpreter (sys.executable), the resolved
+    # spectre binary, the hostname, and the numpy tri-state of this very
+    # interpreter (yes / fallback / no; fallback = the staged numfallback
+    # asset at <scripts root>/../assets imports). sweep_progress.json carries
+    # it; a green self-check reads it back to pin the project (and remember
+    # the node) — measurement, never a guess.
     toolchain = {
         "python": sys.executable or None,
         "spectre": spectre_cmd,
         "node": platform.node() or None,
+        "numpy": probe_numpy_state(),
     }
 
     max_parallel = args.max_parallel or int(config.get("max_parallel", 4))

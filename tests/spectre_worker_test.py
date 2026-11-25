@@ -193,9 +193,26 @@ def test_main_progress_and_markers():
             assert tc and tc.get("python") == sys.executable, tc
             assert tc.get("spectre") == sys.executable, tc
             assert isinstance(tc.get("node"), str) and tc["node"], tc
+            # D-021: the numpy tri-state rides along (yes / fallback / no)
+            assert tc.get("numpy") in ("yes", "no", "fallback"), tc
     finally:
         W.run_single_point = original_run
         W.resolve_spectre_cmd = original_resolve
+
+
+def test_probe_numpy_state():
+    # D-021: the tri-state the telemetry carries — "yes" (native import),
+    # "fallback" (the staged numfallback asset imports), "no" (neither, e.g. a
+    # python 2 shell). Never raises; a native numpy import must answer "yes".
+    state = W.probe_numpy_state()
+    assert state in ("yes", "no", "fallback"), state
+    try:
+        import numpy  # noqa: F401
+        has_numpy = True
+    except Exception:
+        has_numpy = False
+    if has_numpy:
+        assert state == "yes", state
 
 
 def test_main_startup_errors():
