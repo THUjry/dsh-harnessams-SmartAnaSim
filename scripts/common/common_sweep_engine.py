@@ -106,12 +106,14 @@ def read_simulator(work_dir):
     return None
 
 
-def write_progress(work_dir, names, combos):
+def write_progress(work_dir, names, combos, toolchain=None):
     """Aggregate every point_meta.json into sweep_progress.json.
 
     Returns the progress dict. Status is 'completed' when every point is
     success/partial, 'failed' when all points finished with a failure, else
-    'running'.
+    'running'. The optional toolchain dict (the worker's measured
+    interpreter/simulator paths, D-016/D-017 telemetry) is carried verbatim:
+    a green run's caller reads it back to pin what the job really ran under.
     """
     total = len(combos)
     points = []
@@ -162,6 +164,8 @@ def write_progress(work_dir, names, combos):
         "points": points,
         "updated_at": utc_now(),
     }
+    if toolchain:
+        prog["toolchain"] = toolchain
     atomic_write_json(os.path.join(work_dir, "sweep_progress.json"), prog)
     return prog
 

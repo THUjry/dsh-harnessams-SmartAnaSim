@@ -53,6 +53,7 @@ import argparse
 import concurrent.futures
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -346,6 +347,15 @@ def main(argv=None):
         print(msg, file=sys.stderr)
         return 2
     spectre_cmd = probe
+    # toolchain telemetry (D-016/D-017): what THIS job really runs under — the
+    # interpreter (sys.executable), the resolved spectre binary, the hostname.
+    # sweep_progress.json carries it; a green self-check reads it back to pin
+    # the project (and remember the node) — measurement, never a guess.
+    toolchain = {
+        "python": sys.executable or None,
+        "spectre": spectre_cmd,
+        "node": platform.node() or None,
+    }
 
     max_parallel = args.max_parallel or int(config.get("max_parallel", 4))
     write_simulator(work_dir, "spectre")
@@ -384,7 +394,7 @@ def main(argv=None):
                 print("[sweep] %s %s %ss" % (m["point_name"], m["status"],
                                             m.get("elapsed_sec")))
             if time.monotonic() > next_progress:
-                write_progress(work_dir, names, combos)
+                write_progress(work_dir, names, combos, toolchain=toolchain)
                 next_progress = time.monotonic() + PROGRESS_PERIOD_SEC
             if time.monotonic() - t0 > gto:
                 print("[sweep] global budget %.0fs exhausted; winding down early "
@@ -403,7 +413,7 @@ def main(argv=None):
                              "signals": {}, "finished_at": utc_now()})
                 break
 
-    prog = write_progress(work_dir, names, combos)
+    prog = write_progress(work_dir, names, combos, toolchain=toolchain)
     n_ok = sum(1 for m in metas if m and m.get("status") == "success")
     n_partial = sum(1 for m in metas if m and m.get("status") == "partial")
     print("[sweep] done: %d success / %d partial / %d failed in %.1fs"

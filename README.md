@@ -19,7 +19,7 @@ python <pkg>/scripts/spectre/spectre_sweep_worker.py --work-dir <run dir> [--max
 python <pkg>/scripts/spectre/spectre_psf_parse.py  --work-dir <run dir> [--format csv]
 ```
 
-run anywhere python exists (the worker needs Spectre on that host). The bundled `smart-spectre` skill carries the full contracts — template rules, the `sweep_config.json` schema, smart timeouts, protocol files, the S-parameter chain, cascade netlist stitching, the PSS variant, and the Virtuoso schematic round-trip — as a root page plus named companion pages.
+run anywhere python exists (the worker needs Spectre on that host). The worker records its measured toolchain (its own interpreter, the resolved spectre, the hostname) into `sweep_progress.json` — the HarnessAMS self-check reads it back to pin the project's cluster toolchain (D-016/D-017). The bundled `smart-spectre` skill carries the full contracts — template rules, the `sweep_config.json` schema, smart timeouts, protocol files, the S-parameter chain, cascade netlist stitching, the PSS variant, and the Virtuoso schematic round-trip — as a root page plus named companion pages.
 
 ## Virtuoso schematic interaction (`gen_vsch_import` / `gen_vsch_export`)
 

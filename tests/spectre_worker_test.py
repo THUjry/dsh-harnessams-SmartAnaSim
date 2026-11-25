@@ -186,6 +186,13 @@ def test_main_progress_and_markers():
             assert prog["total_points"] == 2 and prog["succeeded"] == 2, prog
             assert prog["simulator"] == "spectre", prog
             assert open(os.path.join(tmp, ".simulator"), encoding="utf-8").read().strip() == "spectre"
+            # D-016/D-017 telemetry: sweep_progress.json carries the toolchain
+            # the job really ran under — the self-check harvests it to pin the
+            # project and remember the node (measurement, never a guess)
+            tc = prog.get("toolchain")
+            assert tc and tc.get("python") == sys.executable, tc
+            assert tc.get("spectre") == sys.executable, tc
+            assert isinstance(tc.get("node"), str) and tc["node"], tc
     finally:
         W.run_single_point = original_run
         W.resolve_spectre_cmd = original_resolve
