@@ -41,15 +41,17 @@ def write_errlog(work_dir, message):
 
 # ---- check parameters (check_params.json) ----------------------------------
 # Shape contract shared with the top-level plugin (HarnessAMS
-# src/server/checkparams.js): {"rcl": {"r": [lo, hi], "c": [...], "l": [...]},
-# "unit_check": bool, "bias_check": bool, "strict_includes": bool}. The task
-# sidebar's check sub-view writes it under <workspace>/.harnessams/; the
-# assembly check libraries read it as their default source of switches/bounds.
+# src/server/checkparams.js) and the pre-check engine (SmartAnaSim
+# src/precheck.js): {"rcl": {"r": [lo, hi], "c": [...], "l": [...]},
+# "mult": {"nf": [lo, hi], "m": [...]}, "unit_check": bool}. The task
+# sidebar's check sub-view writes it under <workspace>/.harnessams/; the check
+# faces (spectre_pre_check tool, spectre_checks.py) read it as their default
+# source of bounds/switches. Legacy bias_check / strict_includes keys are
+# ignored on read (removed 2026-11-25 with their check families).
 CHECK_PARAMS_DEFAULTS = {
     "rcl": {"r": (0.1, 1e6), "c": (1e-15, 1e-6), "l": (1e-13, 1e-8)},
+    "mult": {"nf": (1, 128), "m": (1, 1000)},
     "unit_check": True,
-    "bias_check": True,
-    "strict_includes": False,
 }
 
 _check_params_cache = {}
@@ -65,14 +67,44 @@ def _valid_rcl_pair(value):
     return None
 
 
+def _valid_mult_pair(value):
+    """One [lo, hi] multiplier pair: positive integers, ordered."""
+    if (isinstance(value, (list, tuple)) and len(value) == 2
+            and all(isinstance(v, int) and not isinstance(v, bool) and v > 0
+                    for v in value)
+            and value[0] < value[1]):
+        return (int(value[0]), int(value[1]))
+    return None
+
+
 def default_check_params():
-    """A fresh copy of the built-in defaults (rcl pairs as tuples)."""
+    """A fresh copy of the built-in defaults (rcl/mult pairs as tuples)."""
     return {
         "rcl": dict(CHECK_PARAMS_DEFAULTS["rcl"]),
+        "mult": dict(CHECK_PARAMS_DEFAULTS["mult"]),
         "unit_check": CHECK_PARAMS_DEFAULTS["unit_check"],
-        "bias_check": CHECK_PARAMS_DEFAULTS["bias_check"],
-        "strict_includes": CHECK_PARAMS_DEFAULTS["strict_includes"],
     }
+
+
+def _merge_check_layer(params, raw):
+    """One layer (project file or session table) merged over params, per key,
+    fail-open. Unknown keys are ignored."""
+    if not isinstance(raw, dict):
+        return
+    raw_rcl = raw.get("rcl")
+    if isinstance(raw_rcl, dict):
+        for kind in ("r", "c", "l"):
+            pair = _valid_rcl_pair(raw_rcl.get(kind))
+            if pair:
+                params["rcl"][kind] = pair
+    raw_mult = raw.get("mult")
+    if isinstance(raw_mult, dict):
+        for kind in ("nf", "m"):
+            pair = _valid_mult_pair(raw_mult.get(kind))
+            if pair:
+                params["mult"][kind] = pair
+    if isinstance(raw.get("unit_check"), bool):
+        params["unit_check"] = raw["unit_check"]
 
 
 def _read_project_params(cand):
@@ -84,16 +116,7 @@ def _read_project_params(cand):
     try:
         with open(cand, encoding="utf-8-sig") as f:
             raw = json.load(f)
-        if isinstance(raw, dict):
-            raw_rcl = raw.get("rcl")
-            if isinstance(raw_rcl, dict):
-                for kind in ("r", "c", "l"):
-                    pair = _valid_rcl_pair(raw_rcl.get(kind))
-                    if pair:
-                        params["rcl"][kind] = pair
-            for key in ("unit_check", "bias_check", "strict_includes"):
-                if isinstance(raw.get(key), bool):
-                    params[key] = raw[key]
+        _merge_check_layer(params, raw)
     except (OSError, ValueError):
         pass
     _check_params_cache[cand] = params
@@ -109,24 +132,15 @@ def _apply_session_params(sessions_path, session_id, params):
     cached = _check_params_cache.get(cache_key)
     if cached is not None:
         return cached
-    out = {"rcl": dict(params["rcl"]), **{k: params[k] for k in
-            ("unit_check", "bias_check", "strict_includes")}}
+    out = {"rcl": dict(params["rcl"]), "mult": dict(params["mult"]),
+           "unit_check": params["unit_check"]}
     try:
         with open(sessions_path, encoding="utf-8-sig") as f:
             raw = json.load(f)
         sessions = raw.get("sessions") if isinstance(raw, dict) else None
         entry = sessions.get(session_id) if isinstance(sessions, dict) else None
         sess = entry.get("check_params") if isinstance(entry, dict) else None
-        if isinstance(sess, dict):
-            raw_rcl = sess.get("rcl")
-            if isinstance(raw_rcl, dict):
-                for kind in ("r", "c", "l"):
-                    pair = _valid_rcl_pair(raw_rcl.get(kind))
-                    if pair:
-                        out["rcl"][kind] = pair
-            for key in ("unit_check", "bias_check", "strict_includes"):
-                if isinstance(sess.get(key), bool):
-                    out[key] = sess[key]
+        _merge_check_layer(out, sess)
     except (OSError, ValueError):
         pass
     _check_params_cache[cache_key] = out

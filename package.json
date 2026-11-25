@@ -1,7 +1,7 @@
 {
   "name": "dsh-harnessams-smart-ana-sim",
   "version": "0.1.0",
-  "description": "HarnessAMS-SmartAnaSim: pure simulator tools, usable standalone — Spectre netlist assembly (template generation + config checks) and S-parameter reading/extraction, plus the sweep worker and analysis scripts under scripts/ and the bundled smart-spectre configuration skill",
+  "description": "HarnessAMS-SmartAnaSim: pure simulator tools, usable standalone — Spectre netlist pre-check (format/value validation for hand-written run directories) and S-parameter reading/extraction, plus the sweep worker and analysis scripts under scripts/ and the bundled smart-spectre configuration skill",
   "type": "module",
   "icon": "icon.png",
   "main": "src/index.js",

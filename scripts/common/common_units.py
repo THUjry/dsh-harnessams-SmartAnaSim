@@ -1,20 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Assembly-layer unit normalization and bias checks for the Spectre channel.
+"""Assembly-layer unit normalization for the Spectre channel.
 
 Design contract:
 - spectre lengths: the suffix is REQUIRED and preserved ("1.5u", "60n"),
   because a bare number in a Spectre netlist means metres (the unitless-value
   trap: a 6.0 ohm poly resistor becomes ~6 m long).
 - frequencies: bare number = Hz; "10G" / "10Meg" / "100k" accepted.
-- currents: bare number = A; p/n/u/m suffixes accepted.
 - counts: non-negative integers only (bool does not count).
-- bias voltages must satisfy |bias| < Vdd strictly.
 
-Workspace switches (2026-11-10): <workspace>/.harnessams/check_params.json —
+Workspace switch (2026-11-10): <workspace>/.harnessams/check_params.json —
 edited from the HarnessAMS task sidebar's check sub-view — can turn the unit
-checks (unit_check) and the bias gate (bias_check) off for the whole workspace;
-everything fails open to the built-in behaviour when the file is absent or
-unreadable.
+checks (unit_check) off for the whole workspace; everything fails open to the
+built-in behaviour when the file is absent or unreadable.
 
 Pure standard library; imported by the check libraries and the demo gen scripts.
 """
@@ -24,7 +21,6 @@ import re
 import sys
 
 _FREQ_SUFFIX = {"G": 1e9, "M": 1e6, "k": 1e3, "meg": 1e6}  # input suffix -> Hz
-_CUR_SUFFIX = {"p": 1e-12, "n": 1e-9, "u": 1e-6, "m": 1e-3}  # input suffix -> A
 
 
 def _check_params():
@@ -46,13 +42,6 @@ def _check_params():
 def _unit_check_enabled():
     try:
         return bool(_check_params().get("unit_check", True))
-    except Exception:
-        return True
-
-
-def _bias_check_enabled():
-    try:
-        return bool(_check_params().get("bias_check", True))
     except Exception:
         return True
 
@@ -128,29 +117,6 @@ def norm_freq(name, value, positive=True):
     return fmt_num(hz)
 
 
-def norm_current(name, value, positive=True):
-    """Current normalization: bare number = A; '50u' = 50e-6; '2m' = 2e-3. Returns A."""
-    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
-        raise CheckError("%s: current must be a number or a p/n/u/m-suffixed string, got %r"
-                         % (name, value))
-    if isinstance(value, (int, float)):
-        amp = float(value)
-    else:
-        text = value.strip()
-        m = re.fullmatch(r"([0-9]*\.?[0-9]+)\s*([pnum])(?:A)?", text, re.I)
-        if m:
-            amp = float(m.group(1)) * _CUR_SUFFIX[m.group(2).lower()]
-        elif not _unit_check_enabled() and _finite_float(text) is not None:
-            # unit checks off: any float-parseable text is taken at face value (A)
-            amp = float(text)
-        else:
-            raise CheckError("%s: current accepts only a bare number (A) or a p/n/u/m suffix "
-                             "(e.g. '50u'), got %r" % (name, value))
-    if positive and amp <= 0:
-        raise CheckError("%s: current must be positive, got %r" % (name, value))
-    return fmt_num(amp)
-
-
 def norm_count(name, value, minimum=1):
     """Count parameters (nf etc.): non-negative integers only (bool does not count)."""
     if isinstance(value, bool) or not isinstance(value, int):
@@ -162,19 +128,6 @@ def norm_count(name, value, minimum=1):
     if value < minimum:
         raise CheckError("%s: count must be >= %s, got %s" % (name, minimum, value))
     return int(value)
-
-
-def check_bias_lt_vdd(name, bias_v, vdd):
-    """Bias voltage check: |bias| must stay strictly below Vdd (1e-12 float
-    tolerance). Workspace switch: bias_check=false (check_params.json) turns
-    the gate off — the value returns unchecked."""
-    if not _bias_check_enabled():
-        return bias_v
-    if abs(bias_v) >= vdd - 1e-12:
-        raise CheckError("%s: bias %s V violates |bias| < Vdd=%s V "
-                         "(rejected at the assembly layer, not simulated)"
-                         % (name, bias_v, vdd))
-    return bias_v
 
 
 def fmt_num(x):

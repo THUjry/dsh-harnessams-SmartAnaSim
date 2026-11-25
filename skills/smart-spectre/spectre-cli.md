@@ -1,6 +1,6 @@
 # spectre-cli — pure command-line simulation & parameter sweeps
 
-The operational entry page of the smart-spectre skill: running spectre headlessly, the assembly layer, the run-directory contract, the sweep worker and its config schema, the psf analysis scripts, and the netlist-level cascade assembly (cascade assembly and sweeping are CLI business; the netlist language itself is `spectre-grammar.md`). The `snp_*` S-parameter tools (`snp_read` / `snp_extract`) carry their own tool descriptions and are out of this skill's scope.
+The operational entry page of the smart-spectre skill: running spectre headlessly, the write/pre-check layer for run directories, the run-directory contract, the sweep worker and its config schema, the psf analysis scripts, and the netlist-level cascade assembly (cascade assembly and sweeping are CLI business; the netlist language itself is `spectre-grammar.md`). The `snp_*` S-parameter tools (`snp_read` / `snp_extract`) carry their own tool descriptions and are out of this skill's scope.
 
 ## Running spectre directly (no GUI)
 
@@ -12,17 +12,17 @@ A netlist runs headlessly with the raw CLI; psfascii raw output keeps the result
 
 Variant engines and threading mirror `spectre_args` in sweep_config.json (e.g. `++aps +mt -env ade`). Each analysis instance writes one raw file named after it — keep the `sp` instance name bare so S-parameter outputs land in `sp.sp` exactly where the parsers look (see `spectre-grammar.md`). For automated point sweeps use the sweep worker below instead of shell loops; for reading results with plain python see the analysis-scripts section.
 
-## The assembly layer (`spectre_assemble`)
+## Writing the run directory (hand-write + `spectre_pre_check`)
 
-A project supplies `script/analysis/gen_*.py`; the tool runs it with the project root as cwd (`--out` forwarded, `HARNESSAMS_SIMULATOR=spectre` in the environment) and it writes the run-directory inputs: `template*.scs` + `sweep_config.json` pairs. The suite's project self-check ships a worked example (`gen_selfcheck_rc.py`, an ideal-component RC testbench); its low-pass pair is the minimal reference shape:
+The recommended flow hand-writes the run-directory inputs — `template*.scs` + `sweep_config.json` — following the reference designs (the suite's dca-cell-design skill and its sky130 example templates) and this contract. The suite's project self-check ships a worked example (an ideal-component RC testbench); its low-pass pair is the minimal reference shape:
 
 ```
 // RC low-pass (ideal components, no PDK)
 simulator lang=spectre
-parameters r_val=1k c_val=1n
+parameters r_val=@@r_val@@ c_val=@@c_val@@
 V1 (vin 0) vsource dc=0 mag=1
-R1 (vin vout) resistor r=@@r_val@@
-C1 (vout 0) capacitor c=@@c_val@@
+R1 (vin vout) resistor r=r_val
+C1 (vout 0) capacitor c=c_val
 save vout
 ac ac start=1e+03 stop=1e+08 dec=50
 ```
@@ -38,7 +38,13 @@ ac ac start=1e+03 stop=1e+08 dec=50
 }
 ```
 
-Before a netlist is accepted, the assembly-layer check library (also applied when you hand-write a template) rejects four families of problems — format, units, ideal RCL ranges, bias — the concrete rules are the syntax section of `spectre-grammar.md`. Check parameters resolve per session: built-in defaults <- the project's optional `.harnessams/check_params.json` <- the calling session's optional confirmed table (`.harnessams/sessions.json`); absent stores fail open.
+The `@@P@@` markers live on the `parameters` statement ONLY (the sole exemption: `@@temperature@@` on a simulatorOptions line); the circuit references parameters by name. The worker substitutes the per-point values into the parameters line, so the circuit body stays valid Spectre for every point of the sweep.
+
+`spectre_pre_check {run_dir}` validates a hand-written directory before submission (pure JS — nothing executes, nothing is written): language format, sweep-parameter presence, and the value gates; the concrete rules are the syntax section of `spectre-grammar.md`. The HarnessAMS `batch_submit` tool runs the same check automatically before staging anything and fails with the findings — an explicit `no_pre_check: true` waives it after reviewing the failure report. Check parameters resolve per session: built-in defaults <- the project's optional `.harnessams/check_params.json` <- the calling session's optional confirmed table (`.harnessams/sessions.json`); absent stores fail open.
+
+### The optional gen-script path (legacy)
+
+Projects that prefer scripted assembly may still ship `script/analysis/gen_*.py` and run it directly (project root as cwd, `--out` forwarded) to emit the same `template*.scs` + `sweep_config.json` pairs; `scripts/spectre/spectre_checks.py` keeps the same check contract for that path, and whatever it emits still passes through `spectre_pre_check` at submit time.
 
 ## Run-directory contract (what the worker writes)
 

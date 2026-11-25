@@ -14,7 +14,7 @@ const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const EXPECTED = [
   'gen_vsch_export', 'gen_vsch_import',
   'snp_extract', 'snp_guide', 'snp_read',
-  'spectre_assemble',
+  'spectre_pre_check',
 ]
 
 test('plugin metadata', () => {
@@ -76,8 +76,8 @@ test('family toggles select the registered tool families (only explicit false tr
   assert.deepEqual(names({}), EXPECTED)
   assert.deepEqual(names(undefined), EXPECTED)
   assert.deepEqual(names({ spectre: false }), ['gen_vsch_export', 'gen_vsch_import', 'snp_extract', 'snp_guide', 'snp_read'])
-  assert.deepEqual(names({ snp: false }), ['gen_vsch_export', 'gen_vsch_import', 'spectre_assemble'])
-  assert.deepEqual(names({ vsch: false }), ['snp_extract', 'snp_guide', 'snp_read', 'spectre_assemble'])
+  assert.deepEqual(names({ snp: false }), ['gen_vsch_export', 'gen_vsch_import', 'spectre_pre_check'])
+  assert.deepEqual(names({ vsch: false }), ['snp_extract', 'snp_guide', 'snp_read', 'spectre_pre_check'])
   assert.deepEqual(names({ spectre: false, snp: false }), ['gen_vsch_export', 'gen_vsch_import'])
   assert.deepEqual(names({ spectre: false, snp: false, vsch: false }), [])
 
@@ -87,7 +87,7 @@ test('family toggles select the registered tool families (only explicit false tr
     tools: { register: (t) => registered.push(t.name) },
   }
   apply(ctx, { snp: false })
-  assert.deepEqual(registered.sort(), ['gen_vsch_export', 'gen_vsch_import', 'spectre_assemble'])
+  assert.deepEqual(registered.sort(), ['gen_vsch_export', 'gen_vsch_import', 'spectre_pre_check'])
 })
 
 test('every tool compiles to an object-rooted JSON Schema with typed properties', () => {
@@ -129,8 +129,8 @@ test('the schema compiler rejects required:false and accepts required:true', () 
 
 test('argument validation runs before execution', async () => {
   const defs = toolDefinitions()
-  const assembly = makeTool(defs.find((d) => d.name === 'spectre_assemble'))
-  await assert.rejects(() => assembly.execute({}), /missing required property "project_dir"/)
+  const precheck = makeTool(defs.find((d) => d.name === 'spectre_pre_check'))
+  await assert.rejects(() => precheck.execute({}), /missing required property "run_dir"/)
 
   const read = makeTool(defs.find((d) => d.name === 'snp_read'))
   await assert.rejects(() => read.execute({ file: 7 }), /"file" must be a string/)

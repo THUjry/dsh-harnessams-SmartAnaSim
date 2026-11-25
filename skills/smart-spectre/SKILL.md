@@ -2,8 +2,8 @@
 name: smart-spectre
 description: >
   How to run Spectre simulations from the pure command line and how to sweep
-  parameters — the spectre-cli page (direct runs, the assembly layer, the
-  sweep worker and sweep_config schema, the psf analysis scripts, cascade
+  parameters — the spectre-cli page (direct runs, the write/pre-check layer,
+  the sweep worker and sweep_config schema, the psf analysis scripts, cascade
   assembly) plus the spectre-grammar page for netlist syntax and per-analysis
   particularities (AC, sp with paramtype=yz, swept PSS), and two Virtuoso
   round-trip pages. Trigger on spectre netlist format, sweep configuration, or
@@ -12,9 +12,9 @@ description: >
 
 # smart-spectre — pure command-line Spectre simulation & parameter sweeps
 
-This package is a pure tool set, usable on its own: `spectre_assemble` generates and checks sweep inputs, the `snp_*` tools read S-parameters, and the sweep worker plus the analysis scripts under `scripts/` (a sibling of this skill's directory — resolve `../scripts/...` against this skill's base directory) run directly with plain `python`. The skill's scope is the command-line side: **how to run simulations without a GUI and how to sweep parameters**. Two content pages carry it, plus the Virtuoso round-trip pair:
+This package is a pure tool set, usable on its own: `spectre_pre_check` validates hand-written run directories, the `snp_*` tools read S-parameters, and the sweep worker plus the analysis scripts under `scripts/` (a sibling of this skill's directory — resolve `../scripts/...` against this skill's base directory) run directly with plain `python`. The skill's scope is the command-line side: **how to run simulations without a GUI and how to sweep parameters**. Two content pages carry it, plus the Virtuoso round-trip pair:
 
-- `spectre-cli.md` — the operational entry page: running spectre headlessly, the assembly layer (`spectre_assemble` + the check chain), the run-directory contract, the sweep worker CLI and the full sweep_config.json schema, the psf analysis script, and the netlist-level cascade assembly (the `snp_*` tools carry their own descriptions and are out of scope)
+- `spectre-cli.md` — the operational entry page: running spectre headlessly, the write/pre-check layer (hand-written run directories + `spectre_pre_check`), the run-directory contract, the sweep worker CLI and the full sweep_config.json schema, the psf analysis script, and the netlist-level cascade assembly (the `snp_*` tools carry their own descriptions and are out of scope)
 - `spectre-grammar.md` — spectre syntax essentials with a section per analysis type: `@@PARAM@@` template rules, the Spectre-vs-SPICE rules and units, AC excitation, S-parameter `paramtype=yz` matrix output and result organization, the swept-PSS configuration and its pitfalls
 - `virtuoso-import.md` — netlist -> OA: the round-trip charter and tool surface, spiceIn recipes (devmap six constructs, termOrder, place_only ladder), symbol + `<cell>_tb` generation, the CDF parameter-writeback five-step, F2 re-import
 - `virtuoso-export.md` — .oa -> netlist: si / ocean / cdlOut / plain-SKILL routes, the tune-writeback-diff round trip, ocean batching with per-run CDS.log isolation

@@ -2,9 +2,11 @@
 // dev-mount loads this file directly).
 //
 // A pure tool set, usable on its own — no other plugin is required:
-//   spectre_assemble  Spectre sweep-input assembly (template*.scs +
-//                     sweep_config.json) through the project's gen_*.py, with
-//                     the assembly-layer checks
+//   spectre_pre_check  Spectre netlist pre-check for hand-written run
+//                      directories (template*.scs + sweep_config.json):
+//                      language format, sweep-parameter presence and the value
+//                      gates — pure JS, no python on the tool path (see
+//                      src/precheck.js)
 //   snp_*             S-parameter reading / device extraction — guide-gated:
 //                     only snp_guide is always declared; snp_read/snp_extract
 //                     register deferred (deferLoading + when) and enter the
@@ -15,11 +17,12 @@
 //                     OA round trip and never execute anything (see
 //                     src/tools/vsch.js)
 //
-// Architecture: the plugin is only a channel — tool executes spawn plain Python
-// scripts shipped under scripts/ (assembly/check/adjudication logic lives in the
-// script layer; intermediate steps are not codified). The sweep worker and the
-// analysis scripts run directly with python anywhere; standing up a managed
-// scan flow around them is outside this package.
+// Architecture: the netlist pre-check runs in-process (pure JS); every other
+// tool face spawns plain Python scripts shipped under scripts/ (worker and
+// analysis logic lives in the script layer; intermediate steps are not
+// codified). The sweep worker and the analysis scripts run directly with
+// python anywhere; standing up a managed scan flow around them is outside
+// this package.
 //
 // The bundled smart-spectre skill (skills/smart-spectre/) is the configuration
 // reference for this package's own surface: netlist/template format, the
@@ -43,7 +46,7 @@ export const inject = ['tools', 'skills']
 // the full 6-tool surface). Changing the config hot-swaps the plugin: cordis
 // restarts the fiber and apply() re-registers with the new selection.
 export const Config = z.object({
-  spectre: z.boolean().default(true).description('Register the spectre_* tool family (Spectre sweep-input assembly with checks).'),
+  spectre: z.boolean().default(true).description('Register the spectre_* tool family (Spectre netlist pre-check).'),
   snp: z.boolean().default(true).description('Register the snp_* tool family (Touchstone reading / device extraction).'),
   vsch: z.boolean().default(true).description('Register the gen_vsch_* tool family (Virtuoso schematic import/export command assembly).'),
 })

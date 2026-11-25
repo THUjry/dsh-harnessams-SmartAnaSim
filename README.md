@@ -1,18 +1,18 @@
 # HarnessAMS-SmartAnaSim
 
-> Simulator tools, pure and standalone — Spectre netlist assembly (template generation + configuration checks), S-parameter reading/extraction, and Virtuoso schematic interaction (command/SKILL-text assembly for the netlist <-> OA round trip). No other plugin is required: the sweep worker and the analysis scripts under `scripts/` run with plain python, and the bundled `smart-spectre` skill documents the whole configuration surface (the HarnessAMS suite drives the same workers through its own managed batch channel, with the workspace `sim_scripts_dir` pointing at this package's `scripts/` tree). npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
+> Simulator tools, pure and standalone — Spectre netlist pre-check (format/value validation for hand-written run directories), S-parameter reading/extraction, and Virtuoso schematic interaction (command/SKILL-text assembly for the netlist <-> OA round trip). No other plugin is required: the sweep worker and the analysis scripts under `scripts/` run with plain python, and the bundled `smart-spectre` skill documents the whole configuration surface (the HarnessAMS suite drives the same workers through its own managed batch channel, with the workspace `sim_scripts_dir` pointing at this package's `scripts/` tree). npm package `dsh-harnessams-smart-ana-sim`, row id `harnessams-smart-ana-sim`. Install paths and the compatibility matrix live in the top-level `HarnessAMS` repo.
 
 ## Tool surface (6)
 
 | Family | Tool | Runs where |
 |---|---|---|
-| Spectre | `spectre_assemble` | the host executing this plugin (assembly + checks) |
+| Spectre | `spectre_pre_check` | the host executing this plugin (pure JS checks; nothing executes, nothing is written) |
 | S-parameter | `snp_guide` (always declared) | local (tools only, no UI) |
 | S-parameter | `snp_read`, `snp_extract` (deferred, guide-gated) | local (tools only, no UI) |
 | Virtuoso | `gen_vsch_import` | local (assembles ready-to-run command/SKILL text; never executes, no file artifacts) |
 | Virtuoso | `gen_vsch_export` | local (assembles ready-to-run command/SKILL text; never executes, no file artifacts) |
 
-Sweep execution and result parsing are deliberately **script-face, not tools** (2026-11-23 ruling: data processing is not tool-shaped; the managed scan flow lives in the HarnessAMS suite's `batch_*` channel). `spectre_assemble` produces the run directory, then:
+Sweep execution and result parsing are deliberately **script-face, not tools** (2026-11-23 ruling: data processing is not tool-shaped; the managed scan flow lives in the HarnessAMS suite's `batch_*` channel). The run directory (`template*.scs` + `sweep_config.json`) is hand-written following the `smart-spectre` template contract — `spectre_pre_check` validates it (the HarnessAMS `batch_submit` tool runs the same check automatically before staging, with an explicit `no_pre_check` escape); then the worker runs:
 
 ```
 python <pkg>/scripts/spectre/spectre_sweep_worker.py --work-dir <run dir> [--max-parallel 8] [--spectre-cmd spectre]
@@ -42,7 +42,7 @@ When a headless carrier fails, the skill blocks double as the F1 fallback: paste
 
 ## Why this shape
 
-- `spectre_assemble` is simulator-specific: it writes `.scs` and checks `simulator lang=spectre`, placeholders, include paths, the unit-suffix rule (a bare geometry number means metres in Spectre) and ideal R/C/L value ranges.
+- `spectre_pre_check` is simulator-specific: it validates `simulator lang=spectre`, `@@P@@` placeholder placement (parameters statement only), sweep-parameter presence, the unit-suffix rule (a bare geometry number means metres in Spectre), the ideal R/C/L value ranges and the nf/m multiplier ranges — pure JS, so the submit path needs no local python.
 - The sweep worker is a plain script by design: scanning methodology (submission, monitoring, result retrieval) is not simulator knowledge and does not live in this package.
 - Data processing is not a tool: parsing and metrics run as scripts — locally, or on the host that holds the data — keeping the model in charge of the analysis.
 
@@ -54,7 +54,7 @@ src/
   tool.js                  parameter DSL -> valid JSON Schema compiler + validation
   skills.js                bundled-skill registration (resourceBase = the skill dir)
   py.js                    python spawn channel, script paths, error text
-  projects.js              project gen_*.py discovery/execution (assembly bridge)
+  precheck.js              the JS netlist pre-check engine (chain + families)
   tools/
     spectre.js  snp.js  vsch.js
 skills/
@@ -102,7 +102,7 @@ The schema is `@deepseek-ai/schemastery` (a runtime `dependencies` entry — ins
 
 ## Spectre channel
 
-`spectre_assemble` runs the project's `script/analysis/gen_*.py` with the project root as cwd (`--out` forwarded, `HARNESSAMS_SIMULATOR=spectre` in the environment) to emit `template*.scs` + `sweep_config.json` pairs. The sweep worker's config contract (see `scripts/spectre/spectre_sweep_worker.py` and the skill's `spectre-cli.md`):
+The run directory is hand-written (`template*.scs` with `@@P@@` placeholders on the parameters statement only, the circuit referencing parameters by name, plus `sweep_config.json` — the `smart-spectre` skill documents the full template contract) and validated by `spectre_pre_check` before submission. Projects that prefer scripted assembly may still ship a `script/analysis/gen_*.py` (run it directly with the project root as cwd and `--out` forwarded; `spectre_checks.py` keeps the same contract for that optional path — the gen-script flow is legacy, no longer the recommended workflow). The sweep worker's config contract (see `scripts/spectre/spectre_sweep_worker.py` and the skill's `spectre-cli.md`):
 
 ```json
 {
@@ -127,7 +127,7 @@ The schema is `@deepseek-ai/schemastery` (a runtime `dependencies` entry — ins
 - `output_format` must stay `psfascii` for the parser and for the snp_* S-parameter reader.
 - `spectre_psf_parse.py` turns raw PSF ASCII (`ac.ac`, `dc*.dc`, `tran*.tran`, `*.info`) into per-point JSON with Re/Im pairs plus an index; optional long CSV curves. S-parameter `sp.sp` sections flatten to `freq` + `s11..sNN` complex curves through `snp_common.parse_psfascii` (kind preference S > Z > Y), and `--raw-dir` may also point directly at a standalone `.sp` file (outputs land beside it). For S-parameter matrix CSV dumps and passive-device parameter extraction keep using the `snp_*` tools.
 
-`spectre_checks.py` is the assembly-layer library for a project's gen script: `simulator lang=spectre`, forbidden SPICE directives, subckt/ends pairing, `@@PARAM@@` vs sweep parameters, the `template*.scs` family naming warning (default `template.scs`; outside-family names warn — the declared-vs-uploaded match is the submitting channel's business), relative include existence, the u/n-suffix geometry rule, and the ideal R/C/L value-range gate (R 0.1..1M ohm, C 1f..1u farad, L 0.1p..10n henry). Workspace defaults (2026-11-10, re-shaped by D-005 2026-11-19): `common_workspace.read_check_params` resolves the effective chain built-in defaults <- `.harnessams/check_params.json` (project fallback) <- the calling session's confirmed table in `.harnessams/sessions.json`, keyed by the shell-env built-in `DSH_SESSION_ID` (injected by the host into every model-run shell and passed through the tool shells via `exec.agent.id`; runs without a session identity fall back to the project layer) — it supplies the default R/C/L ranges, the strict-includes switch and the unit_check switch for `check_netlist_format`, and `common_units` consults it for the unit_check/bias_check gates; every failure path falls back to the built-in constants (fail-open).
+`spectre_checks.py` is the gen-script companion of `spectre_pre_check` (the JS engine in `src/precheck.js` is the submit-path authority; both faces enforce the same contract): `simulator lang=spectre`, forbidden SPICE directives, subckt/ends pairing, `@@PARAM@@` placement (parameters statement only, `@@temperature@@` on a simulatorOptions line exempt), `@@P@@` <-> sweep-parameter presence, the `template*.scs` family naming warning (default `template.scs`; outside-family names warn — the declared-vs-uploaded match is the submitting channel's business), the u/n-suffix geometry rule, the ideal R/C/L value-range gate (R 0.1..1M ohm, C 1f..1u farad, L 0.1p..10n henry) and the nf/m multiplier-range gate (positive integers, 1..128 / 1..1000). Workspace defaults (2026-11-10, re-shaped by D-005 2026-11-19, table re-shaped 2026-11-25 — legacy `bias_check`/`strict_includes` keys are ignored on read, retired with their check families): `common_workspace.read_check_params` resolves the effective chain built-in defaults <- `.harnessams/check_params.json` (project fallback) <- the calling session's confirmed table in `.harnessams/sessions.json`, keyed by the shell-env built-in `DSH_SESSION_ID` (injected by the host into every model-run shell and passed through the tool shells via `exec.agent.id`; runs without a session identity fall back to the project layer) — it supplies the default R/C/L and nf/m tables and the unit_check switch; every failure path falls back to the built-in constants (fail-open).
 
 ## S-parameter reading and extraction (snp_read / snp_extract)
 

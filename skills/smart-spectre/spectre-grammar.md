@@ -17,14 +17,15 @@ V3 (SWB AVSS) vsource dc=1.2*(1-SW) type=dc     // Spectre evaluates the express
 
 Only the `parameters` line needs `@@...@@` placeholders. `@@(\w+)@@` matches `[a-zA-Z0-9_]+` only — `@@1-SW@@` will not resolve; write `1-SW` in the instance line instead.
 
-## Spectre vs SPICE rules (enforced by the assembly check chain)
+## Spectre vs SPICE rules (enforced by spectre_pre_check)
 
-- `simulator lang=spectre` must lead the netlist; SPICE-only directives are rejected: `.control` `.lib` `.include` `.param` `.model` `.tran` `.ac` `.dc`
+- `simulator lang=spectre` must lead the netlist; SPICE-only directives are rejected: `.control` `.lib` `.include` `.param` `.model` `.tran` `.ac` `.dc`; the text is LF-only and pure ASCII
 - `subckt`/`ends` must balance; Spectre-native statements carry no leading dot
-- template file names must match the `template*.scs` family; `include` of a missing relative file is rejected; placeholder declared/used mismatch is rejected
-- unit suffixes — geometry values (`l` `w` `lr` `wr`...) must carry u/n suffixes; frequencies G/M/k; currents p/n/u/m; counts non-negative integers
+- template file names must match the `template*.scs` family; `@@P@@` placement (parameters statement only, `@@temperature@@` on a simulatorOptions line exempt) and placeholder/config presence (both directions) are rejected when violated
+- unit suffixes — geometry values (`l` `w` `lr` `wr`...) must carry u/n suffixes; frequencies G/M/k; counts are non-negative integers
 - `m`/`M` are case-sensitive per Spectre: `1Meg`, never `1M`
-- ideal RCL ranges — R 0.1..1e6 ohm, C 1f..1uF, L 0.1p..10nH; |bias| < Vdd
+- ideal RCL ranges — R 0.1..1e6 ohm, C 1f..1uF, L 0.1p..10nH (literals, name-referenced swept values, and C/R/L-initial config names)
+- multiplier ranges — `nf` (device fingers) and `m` (instance multiplier) must be positive integers: nf 1..128, m 1..1000
 
 ## Analysis statements — shared rules
 
