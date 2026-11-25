@@ -338,7 +338,9 @@ function checkValues(code, config, params) {
         if (token.startsWith('@@')) continue // placement family reports it
         const num = parseIdealValue(token)
         if (num !== null) {
-          if (num < lo || num > hi) {
+          // r=0 is the idiomatic short (a through-path element in the shipped
+          // sky130 templates); the plausibility range applies above it
+          if (!(kind === 'r' && num === 0) && (num < lo || num > hi)) {
             errors.push(`rcl: ${im[1]} (${im[3]}) ${attr}=${token} (${g(num)} ${RCL_UNIT[kind]}) outside the ideal range ${rangeText(kind, lo, hi)}`)
           }
           continue
@@ -351,7 +353,7 @@ function checkValues(code, config, params) {
           }
           for (const v of valuesFor(token, parameters, templateParams[token])) {
             const n = idealNumber(v)
-            if (n !== null && (n < lo || n > hi)) {
+            if (n !== null && !(kind === 'r' && n === 0) && (n < lo || n > hi)) {
               errors.push(`rcl: ${im[1]} (${im[3]}) ${attr}=${token} value ${JSON.stringify(v)} outside the ideal range ${rangeText(kind, lo, hi)}`)
             }
           }
@@ -437,7 +439,7 @@ function checkValues(code, config, params) {
       const [lo, hi] = params.rcl[kind]
       for (const v of (Array.isArray(vals) ? vals : [vals])) {
         const n = idealNumber(v)
-        if (n !== null && (n < lo || n > hi)) {
+        if (n !== null && !(kind === 'r' && n === 0) && (n < lo || n > hi)) {
           errors.push(`rcl: swept parameter ${name} value ${JSON.stringify(v)} outside the ideal ${kind.toUpperCase()} range ${rangeText(kind, lo, hi)} (name starts with '${name[0]}')`)
         }
       }

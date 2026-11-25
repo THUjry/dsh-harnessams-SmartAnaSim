@@ -302,7 +302,9 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                     continue  # the placement pass above reports it
                 num = parse_ideal_value(token)
                 if num is not None:
-                    if not lo <= num <= hi:
+                    # r=0 is the idiomatic short (a through-path element in
+                    # the shipped sky130 templates); the range applies above it
+                    if not (kind == "r" and num == 0) and not lo <= num <= hi:
                         errors.append("rcl: %s (%s) %s=%s (%g %s) outside the ideal range %s"
                                       % (im.group(1), im.group(3), attr, token, num,
                                          _RCL_UNIT[kind], range_text))
@@ -316,7 +318,8 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                         continue
                     for value in _values_for(token):
                         num = _ideal_number(value)
-                        if num is not None and not lo <= num <= hi:
+                        if (num is not None and not (kind == "r" and num == 0)
+                                and not lo <= num <= hi):
                             errors.append("rcl: %s (%s) %s=%s value %r outside the ideal "
                                           "range %s" % (im.group(1), im.group(3), attr,
                                                         token, value, range_text))
@@ -400,7 +403,8 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
             vals = parameters[name]
             for value in (vals if isinstance(vals, (list, tuple)) else [vals]):
                 num = _ideal_number(value)
-                if num is not None and not lo <= num <= hi:
+                if (num is not None and not (kind == "r" and num == 0)
+                        and not lo <= num <= hi):
                     errors.append("rcl: swept parameter %s value %r outside the ideal %s "
                                   "range %s (name starts with '%s')"
                                   % (name, value, kind.upper(), range_text, name[0]))

@@ -164,6 +164,10 @@ test('multiplier gates: literals, name references, config exact names, expressio
 })
 
 test('prefix heuristic: C-initial config values, expression exemption, no duplicates', async () => {
+  // r=0 is the idiomatic short, exempt from the resistor floor
+  assert.equal((await runPreCheck(makeRun(
+    'simulator lang=spectre\nRshort (in out) resistor r=0\n', { parameters: {} }), null)).ok, true)
+
   const out = await runPreCheck(makeRun(
     'simulator lang=spectre\nparameters Cload=@@Cload@@\n', { parameters: { Cload: ['5u'] } }), null)
   assert.ok(out.errors.some((e) => e.startsWith('rcl:') && e.includes('Cload')), out.errors)

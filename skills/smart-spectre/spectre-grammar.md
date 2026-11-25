@@ -15,7 +15,7 @@ V2 (SW AVSS) vsource dc=1.2*SW type=dc          // Spectre references SW directl
 V3 (SWB AVSS) vsource dc=1.2*(1-SW) type=dc     // Spectre evaluates the expression
 ```
 
-Only the `parameters` line needs `@@...@@` placeholders. `@@(\w+)@@` matches `[a-zA-Z0-9_]+` only — `@@1-SW@@` will not resolve; write `1-SW` in the instance line instead.
+Only the `parameters` line needs `@@...@@` placeholders. `@@(\w+)@@` matches `[a-zA-Z0-9_]+` only — `@@1-SW@@` will not resolve; write `1-SW` in the instance line instead. `spectre_pre_check` enforces this placement: `@@...@@` anywhere outside the `parameters` statement is an error, with the single exemption of `@@temperature@@` on a `simulatorOptions` line (the shipped sky130 templates sweep it there — spectre does not reliably take a parameter reference in `simulatorOptions`).
 
 ## Spectre vs SPICE rules (enforced by spectre_pre_check)
 

@@ -89,7 +89,6 @@ def test_out_of_range_literals():
     cases = [
         ("R1 (a b) resistor r=0.05", "R1"),          # below R floor
         ("R1 (a b) resistor r=10M", "R1"),           # above R ceiling
-        ("R1 (a b) res r=0", "R1"),                  # short
         ("C1 (a b) capacitor c=0.5f", "C1"),         # below C floor
         ("C1 (a b) capacitor c=4.7u", "C1"),         # above C ceiling
         ("L1 (a b) inductor l=0.05p", "L1"),         # below L floor
@@ -100,6 +99,9 @@ def test_out_of_range_literals():
         errs = [e for e in errors_of(t) if e.startswith("rcl:")]
         assert len(errs) == 1, "expected exactly one rcl error for %r, got %r" % (line, errs)
         assert name in errs[0] and "outside the ideal range" in errs[0], errs[0]
+    # r=0 is the idiomatic short (a through-path element in the shipped
+    # sky130 templates), exempt from the floor
+    assert errors_of("simulator lang=spectre\nR1 (a b) resistor r=0\n") == []
 
 
 def test_case_sensitive_milli_vs_mega():
