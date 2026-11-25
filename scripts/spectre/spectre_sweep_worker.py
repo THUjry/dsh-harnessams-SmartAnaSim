@@ -120,7 +120,7 @@ def scan_signals(raw_dir):
             if not os.path.isfile(path):
                 continue
             if name.endswith(".info"):
-                names.update(parse_psf_ascii_file(path).keys())
+                names.update(parse_psf_ascii_file(path).data.keys())
             elif name.endswith((".tran", ".dc", ".ac")):
                 names.add(re.sub(r"\.(tran|dc|ac)+$", "", name))
     except OSError:
