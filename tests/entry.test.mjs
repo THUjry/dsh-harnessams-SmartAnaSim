@@ -20,7 +20,7 @@ const EXPECTED = [
 
 test('plugin metadata', () => {
   assert.equal(name, 'dsh-harnessams-smart-ana-sim')
-  assert.deepEqual(inject, ['tools', 'skills'])
+  assert.deepEqual(inject, ['tools', 'skills', 'agents'])
   assert.equal(typeof apply, 'function')
 })
 
@@ -182,4 +182,34 @@ test('snp_guide activates the deferred family for the calling agent only', async
   // context without an id) must not admit or crash.
   await guide.execute({}, {})
   assert.equal(deferred.every((d) => d.when({}) === false), true)
+})
+
+test('a seeded subagent admits the deferred family through the parent activation (non-seeded does not)', async () => {
+  const defs = toolDefinitions()
+  const guide = makeTool(defs.find((d) => d.name === 'snp_guide'))
+  const deferred = defs.filter((d) => d.deferLoading === true)
+  const stamp = Date.now()
+  // The user-visible session activates by reading the guide itself.
+  const user = { id: `session-user-${stamp}` }
+  await guide.execute({}, { agent: user })
+  // A SEEDED child carries the parent's log prefix (the guide call + doc),
+  // so the declaration admission reflects the inherited state; a NON-seeded
+  // child must read the guide itself. Ancestors resolve via ctx.agents.
+  const agents = new Map([[user.id, user]])
+  const ctx = { agents: { get: (id) => agents.get(id) } }
+  const seeded = { id: `session-seed-${stamp}`,
+    session: { header: { origin: 'subagent', parentSession: user.id, isSeeded: true } } }
+  const unseeded = { id: `session-noseed-${stamp}`,
+    session: { header: { origin: 'subagent', parentSession: user.id, isSeeded: false } } }
+  // Set membership alone carries one hop of inheritance: the parent id sits
+  // in snpActivated, so even the default-ctx defs (no agents map) admit the
+  // seeded child. The ctx.agents walk matters for deeper chains whose
+  // intermediate ids are not themselves in the set.
+  assert.equal(deferred.every((d) => d.when({ agent: seeded }) === true), true, 'membership carries the seeded hop')
+  const scoped = toolDefinitions(ctx).filter((d) => d.deferLoading === true)
+  assert.equal(scoped.every((d) => d.when({ agent: seeded }) === true), true, 'seeded child inherits admission')
+  assert.equal(scoped.every((d) => d.when({ agent: unseeded }) === false), true, 'non-seeded child admits nothing')
+  // The unseeded child still self-serves: its own guide call admits it.
+  await guide.execute({}, { agent: unseeded })
+  assert.equal(scoped.every((d) => d.when({ agent: unseeded }) === true), true, 'non-seeded after its own guide call')
 })

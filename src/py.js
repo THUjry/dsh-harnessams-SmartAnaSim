@@ -5,6 +5,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
 import path from 'node:path'
+import { effectiveSessionId } from './subagent.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -61,13 +62,15 @@ export function readJsonIfExists(file) {
   }
 }
 
-// Per-session env overlay for Python workers (HarnessAMS D-005): exec.agent.id
-// IS the calling session's id, and common_workspace.read_check_params resolves
-// the calling session's confirmed check table through DSH_SESSION_ID. Absent
-// identity (direct server-side calls, tests) returns an empty overlay — the
-// workers then resolve the project-level fallback chain.
-export function sessionEnv(exec) {
-  const sid = typeof exec?.agent?.id === 'string' && exec.agent.id ? exec.agent.id : null
+// Per-session env overlay for Python workers (HarnessAMS D-005): the calling
+// session's id rides DSH_SESSION_ID and common_workspace.read_check_params
+// resolves that session's confirmed check table with it. A delegated subagent
+// anchors on its topmost user-visible ancestor (src/subagent.js), so the
+// worker reads the user session's confirmed table. Absent identity (direct
+// server-side calls, tests) returns an empty overlay — the workers then
+// resolve the project-level fallback chain.
+export function sessionEnv(exec, ctx) {
+  const sid = effectiveSessionId(ctx, exec?.agent)
   return sid ? { DSH_SESSION_ID: sid } : {}
 }
 

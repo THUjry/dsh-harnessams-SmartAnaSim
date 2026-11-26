@@ -409,6 +409,25 @@ test('the tool face resolves the session from exec.agent.id', async () => {
   const explicit = await tool.execute({ run_dir: runDir, session_id: 'sess-direct' }, {})
   assert.equal(explicit.ok, true)
   assert.equal(explicit.params_source, 'session')
+  // a delegated subagent resolves to its topmost user-visible ancestor: the
+  // confirmed table that applies is the USER session's, keyed through
+  // ctx.agents (the walk), never the child's own id
+  const user = { id: 'sess-direct', session: { header: {} } }
+  const child = {
+    id: 'sess-child',
+    session: { header: { origin: 'subagent', parentSession: 'sess-direct', isSeeded: true } },
+  }
+  const agents = new Map([['sess-direct', user]])
+  const scoped = spectreTools({ agents: { get: (id) => agents.get(id) } })[0]
+  const inherited = await scoped.execute({ run_dir: runDir }, { agent: child })
+  assert.equal(inherited.ok, true, JSON.stringify(inherited))
+  assert.equal(inherited.params_source, 'session')
+  const orphan = await scoped.execute({ run_dir: runDir }, {
+    agent: { ...child, session: { header: { origin: 'subagent', parentSession: 'sess-gone', isSeeded: true } } },
+  })
+  // no project check_params.json in this fixture: a broken lineage falls back
+  // to the child's own id, hits no session entry, lands on the builtin layer
+  assert.equal(orphan.params_source, 'builtin')
 })
 
 // cleanup the module-level fixtures after the whole file (each test also uses

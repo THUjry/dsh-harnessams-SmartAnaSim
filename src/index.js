@@ -44,9 +44,10 @@ import { postTools } from './tools/post.js'
 import { registerSkills } from './skills.js'
 
 export const name = 'dsh-harnessams-smart-ana-sim'
-// skills must be declared alongside tools (cordis blocks ctx access to
-// undeclared services — optional chaining cannot save that).
-export const inject = ['tools', 'skills']
+// skills must be declared alongside tools, and the subagent identity policy
+// needs the live agent registry (cordis blocks ctx access to undeclared
+// services — optional chaining cannot save that).
+export const inject = ['tools', 'skills', 'agents']
 
 // DSH-native per-family toggles (official tool-fs precedent): each family
 // registers only when its switch is not explicitly false (defaults keep
@@ -61,10 +62,10 @@ export const Config = z.object({
 
 export function toolDefinitions(ctx = {}, config = {}) {
   return [
-    ...(config.spectre !== false ? spectreTools() : []),
-    ...(config.snp !== false ? snpTools() : []),
+    ...(config.spectre !== false ? spectreTools(ctx) : []),
+    ...(config.snp !== false ? snpTools(ctx) : []),
     ...(config.vsch !== false ? vschTools() : []),
-    ...(config.post !== false ? postTools() : []),
+    ...(config.post !== false ? postTools(ctx) : []),
   ]
 }
 

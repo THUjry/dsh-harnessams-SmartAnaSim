@@ -8,7 +8,7 @@
 // call-only-when-results-look-wrong posture. Pure tool surface: no UI.
 import { runPython, sessionEnv, cliError } from '../py.js'
 
-export function postTools() {
+export function postTools(ctx = {}) {
   return [
     {
       name: 'post_check',
@@ -29,7 +29,7 @@ export function postTools() {
         if (args.raw_dir != null) argv.push('--raw-dir', args.raw_dir)
         let stdout
         try {
-          ;({ stdout } = await runPython('spectre/spectre_post_check.py', argv, 120_000, { env: sessionEnv(exec) }))
+          ;({ stdout } = await runPython('spectre/spectre_post_check.py', argv, 120_000, { env: sessionEnv(exec, ctx) }))
         } catch (e) {
           // argparse usage errors (neither/both dirs) and IO failures land here
           throw new Error(`post_check failed: ${cliError(e)}`)

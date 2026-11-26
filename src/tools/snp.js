@@ -11,9 +11,12 @@
 // is never unset — and keyed by agent id string, which survives in-process
 // session restore (a reopened session gets a fresh Agent object with the same
 // id). After a server restart the set is empty and the model self-heals by
-// calling snp_guide again; sub-agents are separate agents and call the guide
-// themselves.
+// calling snp_guide again. A delegated subagent whose inherited history
+// already carries the guide call (seeded links — see src/subagent.js) admits
+// the family in its own declarations too; a non-seeded subagent reads the
+// guide itself.
 import path from 'node:path'
+import { inheritsSessionState } from '../subagent.js'
 import { cliError, readJsonIfExists, runPython, sessionEnv } from '../py.js'
 
 // agent.id strings that called snp_guide in this process (never unset).
@@ -76,7 +79,7 @@ const EXTRACT_PARAMS = {
   out_dir: { type: 'string', description: 'Output directory (default: beside the input file)' },
 }
 
-export function snpTools() {
+export function snpTools(ctx = {}) {
   return [
     {
       name: 'snp_guide',
@@ -106,7 +109,8 @@ export function snpTools() {
     {
       name: 'snp_read',
       deferLoading: true,
-      when: ({ agent }) => !!agent?.id && snpActivated.has(agent.id),
+      when: ({ agent }) => !!agent?.id
+        && (snpActivated.has(agent.id) || inheritsSessionState(ctx, agent, snpActivated)),
       description: 'Read an S-parameter file (Touchstone .s1p..sNp, Spectre psfascii sp.sp, or a snp_read params '
         + 'CSV) and dump per-frequency S/Z/Y matrices to CSV — converting the data to CSV for convenient '
         + 'calculation — with header info, band statistics, a reciprocity diagnostic and max |Sij|. '
@@ -120,7 +124,7 @@ export function snpTools() {
         const argv = ['--file', String(args.file)]
         if (args.param) argv.push('--param', String(args.param))
         if (args.out_dir) argv.push('--out-dir', String(args.out_dir))
-        const { stdout } = await runPython('snp/snp_read.py', argv, 180_000, { env: sessionEnv(exec) })
+        const { stdout } = await runPython('snp/snp_read.py', argv, 180_000, { env: sessionEnv(exec, ctx) })
           .catch((e) => { throw new Error(`snp_read failed: ${cliError(e)}`) })
         const dir = args.out_dir ? path.resolve(args.out_dir) : path.dirname(path.resolve(String(args.file)))
         const jsonPath = wrotePaths(stdout).find((p) => p.endsWith('_read.json'))
@@ -135,7 +139,8 @@ export function snpTools() {
     {
       name: 'snp_extract',
       deferLoading: true,
-      when: ({ agent }) => !!agent?.id && snpActivated.has(agent.id),
+      when: ({ agent }) => !!agent?.id
+        && (snpActivated.has(agent.id) || inheritsSessionState(ctx, agent, snpActivated)),
       description: 'Extract passive-device parameters from a params CSV written by snp_read (convert '
         + '.sNp / psfascii sp.sp inputs with snp_read first — snp_extract rejects them directly). '
         + 'Types: transformer (L1/L2/Q1/Q2/k, two SRFs, Gmax; 2/3/4/5/6 ports), inductor (L/Q/SRF; 1/2/3 ports), '
@@ -165,7 +170,7 @@ export function snpTools() {
         let stdout = ''
         let failed = null
         try {
-          ;({ stdout } = await runPython('snp/snp_extract.py', argv, 300_000, { env: sessionEnv(exec) }))
+          ;({ stdout } = await runPython('snp/snp_extract.py', argv, 300_000, { env: sessionEnv(exec, ctx) }))
         } catch (e) {
           stdout = typeof e?.stdout === 'string' ? e.stdout : ''
           failed = e

@@ -31,17 +31,32 @@ test('spectre: netlist checks — @@ placement, RCL/mult ranges, geometry suffix
   assert.match(stdout, /spectre checks tests ok/)
 })
 
-// Per-session check-params channel (HarnessAMS D-005): exec.agent.id IS the
-// SessionId; the tool shells thread it to Python workers as DSH_SESSION_ID
-// through py.js sessionEnv (empty overlay when the identity is absent —
-// direct server-side calls and tests resolve the project-level fallback).
+// Per-session check-params channel (HarnessAMS D-005): the calling session's
+// id rides DSH_SESSION_ID to the Python workers through py.js sessionEnv; a
+// delegated subagent resolves to its topmost user-visible ancestor
+// (src/subagent.js), and an absent identity (direct server-side calls, tests)
+// yields an empty overlay — the project-level fallback chain.
 import { sessionEnv } from '../src/py.js'
 
 test('spectre: sessionEnv maps the exec agent identity onto DSH_SESSION_ID', () => {
   const sid = 'session-aaaa1111-2222-3332-4444-555555555555'
-  assert.deepEqual(sessionEnv({ agent: { id: sid } }), { DSH_SESSION_ID: sid })
-  assert.deepEqual(sessionEnv({}), {})
-  assert.deepEqual(sessionEnv(null), {})
-  assert.deepEqual(sessionEnv({ agent: {} }), {})
-  assert.deepEqual(sessionEnv(undefined), {})
+  assert.deepEqual(sessionEnv({ agent: { id: sid } }, {}), { DSH_SESSION_ID: sid })
+  assert.deepEqual(sessionEnv({}, {}), {})
+  assert.deepEqual(sessionEnv(null, {}), {})
+  assert.deepEqual(sessionEnv({ agent: {} }, {}), {})
+  assert.deepEqual(sessionEnv(undefined, {}), {})
+})
+
+test('spectre: sessionEnv rides the subagent\'s topmost user-visible ancestor', () => {
+  const rootId = 'session-bbbb1111-2222-3332-4444-555555555555'
+  const root = { id: rootId, session: { header: {} } }
+  const child = {
+    id: 'session-cccc1111-2222-3332-4444-555555555555',
+    session: { header: { origin: 'subagent', parentSession: rootId, isSeeded: true } },
+  }
+  const agents = new Map([[rootId, root]])
+  const ctx = { agents: { get: (id) => agents.get(id) } }
+  assert.deepEqual(sessionEnv({ agent: child }, ctx), { DSH_SESSION_ID: rootId })
+  // A broken lineage (ancestor not live) falls back to the raw child id.
+  assert.deepEqual(sessionEnv({ agent: child }, {}), { DSH_SESSION_ID: child.id })
 })

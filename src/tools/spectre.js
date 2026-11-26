@@ -15,8 +15,9 @@
 // Pure tool surface: no UI, no scheduling channel — this package is usable on
 // its own.
 import { runPreCheck } from '../precheck.js'
+import { effectiveSessionId } from '../subagent.js'
 
-export function spectreTools() {
+export function spectreTools(ctx = {}) {
   return [
     {
       name: 'spectre_pre_check',
@@ -36,15 +37,16 @@ export function spectreTools() {
         + 'of the same check, not a required pipeline step.',
       parameters: {
         run_dir: { type: 'string', required: true, description: 'Run directory holding the template and sweep_config.json' },
-        session_id: { type: 'string', description: 'Session whose confirmed check-params table applies (default: the calling session)' },
+        session_id: { type: 'string', description: 'Session whose confirmed check-params table applies (default: the calling session — a delegated subagent resolves to the topmost user-visible session)' },
       },
       async execute(args, exec) {
         // The session layer resolves through the caller's identity; batch_submit
         // passes it explicitly because a nested tool call's exec does not
-        // reliably carry the original agent id.
+        // reliably carry the original agent id. A subagent caller anchors on
+        // its topmost user-visible ancestor (src/subagent.js).
         const sid = typeof args.session_id === 'string' && args.session_id
           ? args.session_id
-          : (typeof exec?.agent?.id === 'string' && exec.agent.id ? exec.agent.id : null)
+          : effectiveSessionId(ctx, exec?.agent)
         return runPreCheck(args.run_dir, sid)
       },
     },
