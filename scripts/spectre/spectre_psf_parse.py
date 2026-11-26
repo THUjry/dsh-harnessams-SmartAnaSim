@@ -573,6 +573,19 @@ def _encode_values(values):
     return {"complex": has_complex, "values": out}
 
 
+def _encode_scalar(v):
+    """Finite gate for scalar signals — the scalar twin of _encode_values:
+    a nan/inf scalar used to reach the allow_nan=False json.dump and raise,
+    crashing the whole CLI run; it is None in the payload instead."""
+    if isinstance(v, complex):
+        if not (math.isfinite(v.real) and math.isfinite(v.imag)):
+            return None
+        return v
+    if isinstance(v, float) and not math.isfinite(v):
+        return None
+    return v
+
+
 def _select_signals(data, wanted):
     if not wanted:
         return data
@@ -594,7 +607,7 @@ def _write_point(point, raw_dir, res, out_dir, fmt, wanted=None):
         if isinstance(values, list):
             payload["signals"][name] = _encode_values(values)
         else:
-            payload["signals"][name] = values
+            payload["signals"][name] = _encode_scalar(values)
     stem = "%s_psf" % point
     os.makedirs(out_dir, exist_ok=True)
     json_path = os.path.join(out_dir, stem + ".json")
@@ -606,12 +619,27 @@ def _write_point(point, raw_dir, res, out_dir, fmt, wanted=None):
         csv_path = os.path.join(out_dir, stem + ".csv")
         with open(csv_path, "w", encoding="utf-8", newline="\n") as f:
             f.write("point,signal,index,sweep_value,re,im\n")
+            # the sweep axis feeding the sweep_value column: time for tran,
+            # freq for ac/sp, else the first list-valued signal (a swept
+            # vds/vgate axis on dc/ac sweeps) — hardcoded time/freq used to
+            # leave the column empty for every other analysis. The axis is
+            # ALSO emitted as rows like any list signal: selfcheck_verify
+            # consumes the axis rows as a curve.
+            axis = None
+            if isinstance(data.get("time"), list):
+                axis = "time"
+            elif isinstance(data.get("freq"), list):
+                axis = "freq"
+            else:
+                for k, v in data.items():
+                    if isinstance(v, list):
+                        axis = k
+                        break
+            sweep_v = data.get(axis, []) if axis else []
             for name, values in data.items():
                 if not isinstance(values, list):
                     continue
-                # the sweep variable itself is emitted as a column, not a row
                 for idx, v in enumerate(values):
-                    sweep_v = data.get("time", data.get("freq", []))
                     x = sweep_v[idx] if idx < len(sweep_v) else ""
                     if isinstance(v, complex):
                         f.write("%s,%s,%d,%s,%r,%r\n" % (point, name, idx, x, v.real, v.imag))
@@ -634,8 +662,11 @@ def _point_raw_dir(run_dir, point):
 
 
 def _point_names(run_dir):
-    return sorted(n for n in os.listdir(run_dir)
-                  if re.fullmatch(r"\d{2,}", n) and os.path.isdir(os.path.join(run_dir, n)))
+    # numeric order: pure lexicographic sort put "100" before "11" once a run
+    # passed 99 point directories
+    return sorted((n for n in os.listdir(run_dir)
+                   if re.fullmatch(r"\d{2,}", n) and os.path.isdir(os.path.join(run_dir, n))),
+                  key=int)
 
 
 def main(argv=None):
@@ -659,7 +690,13 @@ def main(argv=None):
             out_dir = os.path.abspath(args.out_dir) if args.out_dir else os.path.dirname(raw_dir)
             res = _parse_sp_curves(raw_dir)
             point = os.path.splitext(os.path.basename(raw_dir))[0]
-            json_path, csv_path, n = _write_point(point, raw_dir, res, out_dir, args.format, wanted)
+            try:
+                json_path, csv_path, n = _write_point(point, raw_dir, res, out_dir, args.format, wanted)
+            except (OSError, ValueError) as e:
+                # IO/encoding failure on a single point = exit 2 (usage/IO
+                # contract), not an unhandled traceback
+                print("[psf] %s: write failed: %s" % (point, e), file=sys.stderr)
+                return 2
             print("[psf] %s: %d signal(s) [%s] -> %s%s"
                   % (point, n, res.status, json_path, (" + " + csv_path) if csv_path else ""))
             return 0 if res.data else 1
@@ -669,7 +706,11 @@ def main(argv=None):
         out_dir = os.path.abspath(args.out_dir) if args.out_dir else os.path.join(raw_dir, "psf")
         res = parse_psf_ascii_directory(raw_dir)
         point = os.path.basename(os.path.dirname(raw_dir)) or "point"
-        json_path, csv_path, n = _write_point(point, raw_dir, res, out_dir, args.format, wanted)
+        try:
+            json_path, csv_path, n = _write_point(point, raw_dir, res, out_dir, args.format, wanted)
+        except (OSError, ValueError) as e:
+            print("[psf] %s: write failed: %s" % (point, e), file=sys.stderr)
+            return 2
         print("[psf] %s: %d signal(s) [%s] -> %s%s"
               % (point, n, res.status, json_path, (" + " + csv_path) if csv_path else ""))
         if res.errors:
@@ -698,9 +739,20 @@ def main(argv=None):
                                     "json": None, "csv": None, "n_signals": 0, "signals": []})
             print("[psf] %s: no *.raw directory" % point, file=sys.stderr)
             continue
-        res = parse_psf_ascii_directory(raw_dir)
-        data = _select_signals(res.data, wanted)
-        json_path, csv_path, n = _write_point(point, raw_dir, res, out_dir, args.format, wanted)
+        try:
+            res = parse_psf_ascii_directory(raw_dir)
+            data = _select_signals(res.data, wanted)
+            json_path, csv_path, n = _write_point(point, raw_dir, res, out_dir, args.format, wanted)
+        except (OSError, ValueError) as e:
+            # one bad point folds into the index as an error entry — the batch
+            # (and the 0/1 exit-code contract) keeps going; an unhandled write
+            # failure used to kill the whole CLI with a traceback
+            index["errors"].append({"point": point, "error": str(e)})
+            index["points"].append({"point": point, "raw_dir": raw_dir, "status": "error",
+                                    "errors": [str(e)], "warnings": [],
+                                    "json": None, "csv": None, "n_signals": 0, "signals": []})
+            print("[psf] %s: write failed: %s" % (point, e), file=sys.stderr)
+            continue
         index["points"].append({"point": point, "raw_dir": raw_dir, "status": res.status,
                                 "errors": list(res.errors), "warnings": list(res.warnings),
                                 "json": json_path, "csv": csv_path,

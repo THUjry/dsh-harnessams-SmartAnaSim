@@ -38,6 +38,16 @@ def approx(actual, expected, tol=1e-12, label=""):
         raise AssertionError("%s: expected %r, got %r" % (label, expected, actual))
 
 
+class _Res:
+    """Minimal PsfResult stand-in for driving _write_point directly."""
+
+    def __init__(self, data):
+        self.status = "success"
+        self.data = data
+        self.errors = []
+        self.warnings = []
+
+
 def raises(match, fn, *args):
     try:
         fn(*args)
@@ -244,6 +254,98 @@ def test_sp_directory_flatten():
         assert "ac_VOUT" in merged and "s21" in merged, sorted(merged)
 
 
+def test_csv_sweep_axis():
+    # the sweep_value column carries the real sweep axis — time/freq when
+    # present, else the first list-valued signal (a swept vds on dc
+    # analyses); hardcoded time/freq used to leave the column empty for
+    # every other analysis. Every list signal stays a row, the axis
+    # INCLUDED (selfcheck_verify consumes the axis rows as a curve).
+    with tempfile.TemporaryDirectory() as tmp:
+        json_path, csv_path, _ = P._write_point("dc", str(DATA),
+                                                _Res({"vds": [0.0, 0.5, 1.0],
+                                                      "gm": [1e-3, 2e-3, 3e-3]}),
+                                                tmp, "csv")
+        rows = [l.split(",") for l in
+                open(csv_path, encoding="utf-8").read().splitlines()[1:] if l]
+        assert [r[1] for r in rows] == ["vds"] * 3 + ["gm"] * 3, rows
+        assert [r[3] for r in rows] == ["0.0", "0.5", "1.0"] * 2, rows  # column filled for both signals
+
+        tmp2 = os.path.join(tmp, "sp")
+        json_path, csv_path, _ = P._write_point("sp", str(DATA),
+                                                _Res({"freq": [1.0, 2.0],
+                                                      "s21": [complex(1, 1), complex(2, 2)]}),
+                                                tmp2, "csv")
+        rows = [l.split(",") for l in
+                open(csv_path, encoding="utf-8").read().splitlines()[1:] if l]
+        assert [r[1] for r in rows] == ["freq"] * 2 + ["s21"] * 2, rows
+        assert [r[3] for r in rows] == ["1.0", "2.0"] * 2, rows
+
+
+def test_nonfinite_scalars_gate():
+    # nan/inf scalars land as null (the _encode_values twin for scalars):
+    # they used to reach the allow_nan=False dump and crash the whole CLI
+    with tempfile.TemporaryDirectory() as tmp:
+        json_path, _, _ = P._write_point(
+            "bad", str(DATA),
+            _Res({"inf_scalar": float("inf"), "nan_scalar": float("nan"),
+                  "cinf": complex(float("inf"), 1.0), "ok": 1.5}),
+            tmp, "json")
+        payload = json.load(open(json_path, encoding="utf-8"))
+        assert payload["signals"]["inf_scalar"] is None, payload
+        assert payload["signals"]["nan_scalar"] is None, payload
+        assert payload["signals"]["cinf"] is None, payload
+        assert payload["signals"]["ok"] == 1.5, payload
+
+
+def test_batch_survives_point_write_crash():
+    # a write failure on ONE point folds into the index as an error entry —
+    # the batch (and the 0/1 exit contract) keeps going instead of dying with
+    # a traceback
+    with tempfile.TemporaryDirectory() as tmp:
+        for name in ("00", "01", "02"):
+            pdir = os.path.join(tmp, name, "netlist.scs.raw")
+            os.makedirs(pdir)
+            shutil.copyfile(str(DATA / "dcOp.info"), os.path.join(pdir, "dcOp.info"))
+        original = P._write_point
+        calls = []
+
+        def flaky(point, raw_dir, res, out_dir, fmt, wanted=None):
+            calls.append(point)
+            if point == "01":
+                raise ValueError("boom")
+            return original(point, raw_dir, res, out_dir, fmt, wanted)
+
+        P._write_point = flaky
+        try:
+            out = os.path.join(tmp, "psf")
+            rc = P.main(["--work-dir", tmp, "--out-dir", out])
+        finally:
+            P._write_point = original
+        assert rc == 0, rc  # two of three points still yielded data (contract: 0 = any data)
+        index = json.load(open(os.path.join(out, "psf_index.json"), encoding="utf-8"))
+        assert [p["point"] for p in index["points"]] == ["00", "01", "02"], index["points"]
+        p01 = [p for p in index["points"] if p["point"] == "01"][0]
+        assert p01["status"] == "error" and p01["errors"] == ["boom"], p01
+        assert index["errors"] == [{"point": "01", "error": "boom"}], index["errors"]
+        p00 = [p for p in index["points"] if p["point"] == "00"][0]
+        assert p00["status"] == "success" and p00["json"], p00
+
+
+def test_point_order_numeric():
+    # pure lexicographic sort put "100" before "11"/"99": numeric order wins
+    with tempfile.TemporaryDirectory() as tmp:
+        for name in ("99", "100", "101", "07"):
+            pdir = os.path.join(tmp, name, "netlist.scs.raw")
+            os.makedirs(pdir)
+            shutil.copyfile(str(DATA / "dcOp.info"), os.path.join(pdir, "dcOp.info"))
+        out = os.path.join(tmp, "psf")
+        rc = P.main(["--work-dir", tmp, "--out-dir", out])
+        assert rc == 0, rc
+        index = json.load(open(os.path.join(out, "psf_index.json"), encoding="utf-8"))
+        assert [p["point"] for p in index["points"]] == ["07", "99", "100", "101"], \
+            index["points"]
+
+
 def main():
     test_parse_directory()
     test_soft_failures()
@@ -251,6 +353,10 @@ def main():
     test_scalar_signals()
     test_accessors()
     test_encode_values()
+    test_csv_sweep_axis()
+    test_nonfinite_scalars_gate()
+    test_batch_survives_point_write_crash()
+    test_point_order_numeric()
     test_cli_work_dir()
     test_cli_errors()
     test_sp_directory_flatten()
