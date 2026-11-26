@@ -72,9 +72,13 @@ def norm_length_si(name, value, positive=True):
         m = re.fullmatch(r"([0-9]*\.?[0-9]+)\s*([un])", value.strip(), re.I)
     if m:
         num = float(m.group(1))
-        if positive and num <= 0:
+        out = fmt_num(num)
+        # positivity is judged AFTER fmt_num: fmt_num collapses (0, 1e-12)
+        # positives to 0, and a value that EMITS as 0 is a short, not the
+        # positive length the caller asked for
+        if positive and out <= 0:
             raise CheckError("%s: length must be positive, got %r" % (name, value))
-        return "%s%s" % (fmt_num(num), m.group(2).lower())
+        return "%s%s" % (out, m.group(2).lower())
     if not _unit_check_enabled():
         num = _finite_float(value)
         if num is not None:
@@ -112,19 +116,24 @@ def norm_freq(name, value, positive=True):
                 raise CheckError("%s: frequency accepts only a bare number (Hz) or a G/M/k suffix "
                                  "(e.g. '10G'/'10Meg'), got %r" % (name, value))
         src = text
-    if positive and hz <= 0:
-        raise CheckError("%s: frequency must be positive, got %s" % (name, src))
+    if positive:
+        out_hz = fmt_num(hz)
+        # judged AFTER fmt_num for the same sub-1e-12 collapse reason as
+        # norm_length_si: an emitted 0 Hz is not a positive frequency
+        if out_hz <= 0:
+            raise CheckError("%s: frequency must be positive, got %s" % (name, src))
+        return out_hz
     return fmt_num(hz)
 
 
 def norm_count(name, value, minimum=1):
-    """Count parameters (nf etc.): non-negative integers only (bool does not count)."""
+    """Count parameters (nf etc.): integers >= minimum, default >= 1 (bool does
+    not count as an integer here)."""
     if isinstance(value, bool) or not isinstance(value, int):
         if isinstance(value, float) and value.is_integer():
             value = int(value)
         else:
-            raise CheckError("%s: count must be a non-negative integer, got %r"
-                             % (name, value))
+            raise CheckError("%s: count must be an integer, got %r" % (name, value))
     if value < minimum:
         raise CheckError("%s: count must be >= %s, got %s" % (name, minimum, value))
     return int(value)

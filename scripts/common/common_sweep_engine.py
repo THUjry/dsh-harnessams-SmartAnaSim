@@ -23,6 +23,7 @@ import itertools
 import json
 import os
 import re
+import sys
 
 from common.common_workspace import atomic_write_json, utc_now, write_errlog
 
@@ -84,7 +85,11 @@ def build_netlist(text, params):
             val = params[name]
         try:
             return format(val, fmt) if fmt else str(val)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
+            # degraded substitution is still str(val), but say so: a bad
+            # format spec used to pass completely silently
+            print("[sweep] warning: format spec %r on %s failed (%s); "
+                  "substituting str() value" % (fmt, name, e), file=sys.stderr)
             return str(val)
 
     return PARAM_RE.sub(repl, text), unresolved, defaulted
