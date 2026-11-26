@@ -1,6 +1,7 @@
 // post family tests: the collect-style diagnostics tool (python self-test +
-// the JS orchestration contract over a real spawn — argparse owns the
-// exactly-one rule, JS only forwards args and passes the JSON report through).
+// the JS orchestration contract over a real spawn — argparse behavior,
+// including the exactly-one rule, lives in the python self-test; JS only
+// forwards args and passes the JSON report through).
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
@@ -59,13 +60,6 @@ test('post: raw_dir single-point mode works through the tool', async () => {
   const report = await postTool().execute({ raw_dir: DATA }, {})
   assert.equal(report.mode, 'raw-dir')
   assert.equal(report.points.present, 1)
-})
-
-test('post: argparse owns the exactly-one rule (JS only orchestrates)', async () => {
-  await assert.rejects(() => postTool().execute({}, {}),
-    /post_check failed:[\s\S]*one of the arguments --work-dir --raw-dir is required/)
-  await assert.rejects(() => postTool().execute({ work_dir: 'x', raw_dir: 'y' }, {}),
-    /post_check failed:[\s\S]*not allowed with argument/)
 })
 
 test('post: a missing directory fails loud with the script output', async () => {

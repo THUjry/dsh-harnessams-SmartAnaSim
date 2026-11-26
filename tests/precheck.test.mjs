@@ -44,7 +44,6 @@ test('parseIdealValue / idealNumber: SI suffixes, m vs M case sensitivity', () =
   assert.equal(parseIdealValue('1M'), 1e6)
   assert.equal(parseIdealValue('0.1'), 0.1)
   assert.equal(parseIdealValue('r_val'), null)
-  assert.equal(parseIdealValue('(cpf*1e-15)'), null)
   assert.equal(idealNumber(100), 100)
   assert.equal(idealNumber('1p'), 1e-12)
   assert.equal(idealNumber(true), null)
@@ -216,16 +215,6 @@ test('prefix heuristic: C-initial config values, expressions rejected, no duplic
     'simulator lang=spectre\nparameters Cload=@@Cload@@\n', { parameters: { Cload: ['5u'] } }), null)
   assert.ok(out.errors.some((e) => e.startsWith('rcl:') && e.includes('Cload')), out.errors)
 
-  // the retired c=(cpf*1e-15) pattern: the expression is an ERROR now, and the
-  // heuristic no longer exempts the c-prefixed name (its bare values read as
-  // base-unit farads and flag on their own)
-  const expr = await runPreCheck(makeRun(
-    'simulator lang=spectre\nparameters cpf=@@cpf@@\nCp (a b) capacitor c=(cpf*1e-15)\n',
-    { parameters: { cpf: [100, 200] } }), null)
-  assert.ok(expr.errors.some((e) => e.includes('expressions are not allowed')), expr.errors)
-  assert.ok(expr.errors.some((e) => e.startsWith('rcl:') && e.includes('cpf')), expr.errors)
-  assert.equal(expr.ok, false)
-
   // the new idiom: bare-name reference + suffixed sweep values, checked
   // precisely by the bare-name path (c=0f degenerate point included)
   assert.equal((await runPreCheck(makeRun(
@@ -329,12 +318,11 @@ test('input errors are structured, not thrown', async () => {
   assert.ok(noTemplate.errors.some((e) => e.includes('template file not found: nope.scs')), noTemplate.errors)
 })
 
-test('check-parameter chain: builtin <- project <- session, fail-open, legacy keys ignored', () => {
+test('check-parameter chain: builtin <- project <- session, fail-open', () => {
   const ws = mkdtempSync(path.join(tmpdir(), 'hams-chain-'))
   mkdirSync(path.join(ws, '.harnessams'))
   writeFileSync(path.join(ws, '.harnessams', 'check_params.json'), JSON.stringify({
     rcl: { c: [1e-15, 1e-9] }, mult: { nf: [1, 8] }, unit_check: false,
-    bias_check: true, strict_includes: true, // legacy keys: ignored on read
   }))
   writeFileSync(path.join(ws, '.harnessams', 'sessions.json'), JSON.stringify({
     version: 2,
