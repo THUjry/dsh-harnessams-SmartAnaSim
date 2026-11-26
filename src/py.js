@@ -25,7 +25,7 @@ export async function runPython(scriptRel, args, timeoutMs = 900_000, options = 
   // options.env MERGES into the child env (callers thread per-session facts
   // like DSH_SESSION_ID through; a full env replacement would drop PATH etc.).
   const { env: extraEnv, ...rest } = options
-  return execFileAsync('python', [abs, ...args], {
+  const opts = {
     timeout: timeoutMs,
     maxBuffer: 32 * 1024 * 1024,
     windowsHide: true,
@@ -35,7 +35,17 @@ export async function runPython(scriptRel, args, timeoutMs = 900_000, options = 
     // (e.g. "[snp] wrote <path>") survive the round trip.
     env: { ...process.env, PYTHONUTF8: '1', ...extraEnv },
     ...rest,
-  })
+  }
+  try {
+    return await execFileAsync('python', [abs, ...args], opts)
+  } catch (e) {
+    // 'python' with no python3 alias (bare Linux) used to fail the whole
+    // chain on ENOENT; retry once under python3 before surfacing the error
+    if (e?.code === 'ENOENT') {
+      return execFileAsync('python3', [abs, ...args], opts)
+    }
+    throw e
+  }
 }
 
 export function cliError(e) {
