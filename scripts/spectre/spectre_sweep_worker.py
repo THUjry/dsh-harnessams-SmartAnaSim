@@ -56,6 +56,7 @@ import os
 import platform
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -211,12 +212,15 @@ def run_single_point(work_dir, idx, params, config, spectre_cmd):
     started = time.monotonic()
     try:
         if cshrc and os.path.isfile(cshrc):
+            # start_new_session puts csh AND its wrapped Spectre in one process
+            # group (ignored on Windows, where the csh wrapper never runs) so a
+            # timeout can kill the tree, not just the wrapper
             proc = subprocess.Popen(["csh", "-c", "source %s; %s" % (cshrc, " ".join(cmd))],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    text=True, cwd=pdir)
+                                    text=True, cwd=pdir, start_new_session=True)
         else:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    text=True, cwd=pdir)
+                                    text=True, cwd=pdir, start_new_session=True)
         out_buf, err_buf = [], []
         t_out = threading.Thread(target=_drain, args=(proc.stdout, out_buf), daemon=True)
         t_err = threading.Thread(target=_drain, args=(proc.stderr, err_buf), daemon=True)
@@ -253,16 +257,25 @@ def run_single_point(work_dir, idx, params, config, spectre_cmd):
                     except OSError:
                         log_text = ""
                     if "Waiting for available license" in log_text and not result["license_wait_extended"]:
-                        effective_timeout = elapsed + lic_ext
+                        # max, not overwrite: when both extensions land in the same
+                        # poll tick the second plain assignment used to wind the
+                        # deadline BACK below the first one
+                        effective_timeout = max(effective_timeout, elapsed + lic_ext)
                         result["license_wait_extended"] = True
                         active = True
                 if os.path.isdir(raw_dir) and os.listdir(raw_dir) and not result["raw_progress_extended"]:
-                    effective_timeout = elapsed + raw_ext
+                    effective_timeout = max(effective_timeout, elapsed + raw_ext)
                     result["raw_progress_extended"] = True
                     active = True
                 if not active:
+                    # kill the whole process group: proc.kill() only reaped the
+                    # csh wrapper, leaving the wrapped Spectre running (and its
+                    # license held) after the point was declared timed out
                     try:
-                        proc.kill()
+                        if hasattr(os, "killpg"):
+                            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                        else:
+                            proc.kill()
                     except OSError:
                         pass
                     result["status"] = "timeout"
@@ -323,13 +336,19 @@ def probe_numpy_state():
 
 def resolve_spectre_cmd(config, work_dir, override=None):
     # chain: --spectre-cmd > sweep_config.spectre_cmd > PATH 'spectre' (the
-    # workspace spectre_cmd layer retired with harnessams.json, 2026-11-19)
+    # workspace spectre_cmd layer retired with harnessams.json, 2026-11-19).
+    # Both separators count: a relative "bin/spectre" on Windows carries only
+    # '/', which the bare os.sep check used to miss — the path fragment then
+    # fell through to the which() lookup instead of joining work_dir
+    def _has_sep(s):
+        return os.sep in s or "/" in s
+
     cmd = override or config.get("spectre_cmd")
-    if cmd and not os.path.isabs(cmd) and os.sep in cmd:
+    if cmd and not os.path.isabs(cmd) and _has_sep(cmd):
         cmd = os.path.normpath(os.path.join(work_dir, cmd))
     if not cmd:
         cmd = "spectre"
-    if not os.path.isabs(cmd) and os.sep not in cmd:
+    if not os.path.isabs(cmd) and not _has_sep(cmd):
         found = shutil.which(cmd)
         return found or cmd
     return cmd
@@ -389,7 +408,15 @@ def main(argv=None):
         "numpy": probe_numpy_state(),
     }
 
-    max_parallel = args.max_parallel or int(config.get("max_parallel", 4))
+    # explicit 0 is an error, not a silent fallback: the old `or` turned 0 into
+    # the default 4 without a word (config value included)
+    max_parallel = (args.max_parallel if args.max_parallel is not None
+                    else int(config.get("max_parallel", 4)))
+    if max_parallel <= 0:
+        msg = "max_parallel must be a positive integer, got %r" % (max_parallel,)
+        write_errlog(work_dir, msg)
+        print(msg, file=sys.stderr)
+        return 2
     write_simulator(work_dir, "spectre")
     init_worker_state(work_dir, len(combos))
 
@@ -411,20 +438,29 @@ def main(argv=None):
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel) as pool:
         futures = {pool.submit(runner, i): i for i in range(total)}
         next_progress = time.monotonic() + PROGRESS_PERIOD_SEC
-        for fut in concurrent.futures.as_completed(futures):
-            i = futures[fut]
-            try:
-                metas[i] = fut.result()
-            except Exception as e:
-                metas[i] = {"point_index": i, "point_name": point_name(i),
-                            "simulator": "spectre", "params": combos[i],
-                            "status": "error", "elapsed_sec": 0,
-                            "error_message": "worker exception: %s" % e,
-                            "signals": {}}
-            with print_lock:
-                m = metas[i]
-                print("[sweep] %s %s %ss" % (m["point_name"], m["status"],
-                                            m.get("elapsed_sec")))
+        pending = set(futures)
+        while pending:
+            # wake on the next completion OR the 30 s period: as_completed only
+            # fired on completions, so one long point left sweep_progress.json
+            # untouched for its whole runtime — contradicting the documented
+            # "written on a 30 s cadence while running"
+            done, pending = concurrent.futures.wait(
+                pending, timeout=PROGRESS_PERIOD_SEC,
+                return_when=concurrent.futures.FIRST_COMPLETED)
+            for fut in done:
+                i = futures[fut]
+                try:
+                    metas[i] = fut.result()
+                except Exception as e:
+                    metas[i] = {"point_index": i, "point_name": point_name(i),
+                                "simulator": "spectre", "params": combos[i],
+                                "status": "error", "elapsed_sec": 0,
+                                "error_message": "worker exception: %s" % e,
+                                "signals": {}}
+                with print_lock:
+                    m = metas[i]
+                    print("[sweep] %s %s %ss" % (m["point_name"], m["status"],
+                                                m.get("elapsed_sec")))
             if time.monotonic() > next_progress:
                 write_progress(work_dir, names, combos, toolchain=toolchain)
                 next_progress = time.monotonic() + PROGRESS_PERIOD_SEC
