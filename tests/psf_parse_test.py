@@ -230,6 +230,33 @@ def test_cli_errors():
         assert "freq" in payload["signals"] and "s21" in payload["signals"]
 
 
+def test_sp_colon_names_flatten():
+    # >= 10 ports: spectre writes colon trace names ("s1:12"); the flatten
+    # keeps the concatenated key below ten ports (the existing contract) and
+    # switches to the colon key once either index needs two digits, so no two
+    # cells can collide into one key ("s111" would be both 1,11 and 11,1).
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = os.path.join(tmp, "netlist.scs.raw")
+        os.makedirs(raw)
+        with open(os.path.join(raw, "sp.sp"), "w", encoding="utf-8", newline="\n") as f:
+            f.write("HEADER\n")
+            f.write('"number of ports" 11\n')
+            f.write("VALUE\n")
+            f.write('"freq" 1e9\n')
+            for i in range(1, 12):
+                for j in range(1, 12):
+                    f.write('"s%d:%d" (%.2f %.2f)\n' % (i, j, i / 100.0, j / 100.0))
+            f.write("END\n")
+        res = P.parse_psf_ascii_directory(raw)
+        assert res.status == "success", res.errors
+        data = res.data
+        assert "s11" in data and "s1:10" in data, sorted(data)
+        # both ambiguous-under-concatenation cells exist separately
+        assert abs(data["s1:11"][0].real - 0.01) < 1e-12, data["s1:11"][0]
+        assert abs(data["s11:1"][0].real - 0.11) < 1e-12, data["s11:1"][0]
+        assert "s111" not in data, "no collided concatenated key for an 11-port file"
+
+
 def test_sp_directory_flatten():
     # sp.sp inside a raw directory joins the merged signals: freq + s11..s44
     # complex curves (delegated to snp_common.parse_psfascii, S > Z > Y).
@@ -360,6 +387,7 @@ def main():
     test_cli_work_dir()
     test_cli_errors()
     test_sp_directory_flatten()
+    test_sp_colon_names_flatten()
     print("psf parser tests ok")
 
 

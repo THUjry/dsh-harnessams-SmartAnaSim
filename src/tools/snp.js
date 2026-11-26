@@ -124,7 +124,7 @@ export function snpTools(ctx = {}) {
         const argv = ['--file', String(args.file)]
         if (args.param) argv.push('--param', String(args.param))
         if (args.out_dir) argv.push('--out-dir', String(args.out_dir))
-        const { stdout } = await runPython('snp/snp_read.py', argv, 180_000, { env: sessionEnv(exec, ctx) })
+        const { stdout } = await runPython('snp/snp_read.py', argv, 180_000, { env: sessionEnv(exec, ctx), signal: exec?.signal })
           .catch((e) => { throw new Error(`snp_read failed: ${cliError(e)}`) })
         const dir = args.out_dir ? path.resolve(args.out_dir) : path.dirname(path.resolve(String(args.file)))
         const jsonPath = wrotePaths(stdout).find((p) => p.endsWith('_read.json'))
@@ -170,7 +170,7 @@ export function snpTools(ctx = {}) {
         let stdout = ''
         let failed = null
         try {
-          ;({ stdout } = await runPython('snp/snp_extract.py', argv, 300_000, { env: sessionEnv(exec, ctx) }))
+          ;({ stdout } = await runPython('snp/snp_extract.py', argv, 300_000, { env: sessionEnv(exec, ctx), signal: exec?.signal }))
         } catch (e) {
           stdout = typeof e?.stdout === 'string' ? e.stdout : ''
           failed = e

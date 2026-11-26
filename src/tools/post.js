@@ -29,7 +29,7 @@ export function postTools(ctx = {}) {
         if (args.raw_dir != null) argv.push('--raw-dir', args.raw_dir)
         let stdout
         try {
-          ;({ stdout } = await runPython('spectre/spectre_post_check.py', argv, 120_000, { env: sessionEnv(exec, ctx) }))
+          ;({ stdout } = await runPython('spectre/spectre_post_check.py', argv, 120_000, { env: sessionEnv(exec, ctx), signal: exec?.signal }))
         } catch (e) {
           // argparse usage errors (neither/both dirs) and IO failures land here
           throw new Error(`post_check failed: ${cliError(e)}`)

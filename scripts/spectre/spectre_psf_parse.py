@@ -135,7 +135,8 @@ def _parse_sp_curves(path):
 
     Delegates to snp.snp_common.parse_psfascii (the single sp parser: kind
     preference S > Z > Y, per-port reference impedances) and flattens the
-    per-frequency NxN matrices into trace-style signals ``s11..sNN`` plus the
+    per-frequency NxN matrices into trace-style signals (``s11..sNN``, or the
+    colon spelling ``s10:1`` once a port index needs two digits) plus the
     ``freq`` sweep axis. Soft: delegation failures fold into the result.
     """
     meta = {"source": str(path), "kind": "sp", "sweep_var": "freq"}
@@ -149,7 +150,12 @@ def _parse_sp_curves(path):
     out = {"freq": list(sp.freq)}
     for i in range(sp.n_ports):
         for j in range(sp.n_ports):
-            out["%s%d%d" % (kind, i + 1, j + 1)] = [m[i][j] for m in sp.mats]
+            # Key rule: concatenated below ten ports (the existing contract),
+            # colon once either index needs two digits - concatenated keys
+            # collide there ("s111" would be both 1,11 and 11,1).
+            key = ("%s%d:%d" % (kind, i + 1, j + 1) if i + 1 >= 10 or j + 1 >= 10
+                   else "%s%d%d" % (kind, i + 1, j + 1))
+            out[key] = [m[i][j] for m in sp.mats]
     return PsfResult(STATUS_SUCCESS, data=out, metadata=meta)
 
 

@@ -272,8 +272,35 @@ def parse_touchstone(path):
 # loader: Spectre psfascii sp
 # ---------------------------------------------------------------------------
 
-_PSF_VAL_RE = re.compile(r'^"(\w+)"\s*\(\s*([-\d.eE+]+)\s+([-\d.eE+]+)\s*\)')
+# Any quoted trace name: spectre writes CONCATENATED names below ten ports
+# ("s12") and the COLON form from ten ports up ("s1:12", multi-digit sides
+# included) - `\w` would silently drop the colon spelling.
+_PSF_VAL_RE = re.compile(r'^"([^"]+)"\s*\(\s*([-\d.eE+]+)\s+([-\d.eE+]+)\s*\)')
 _PSF_FREQ_RE = re.compile(r'^"freq"\s+([-\d.eE+]+)')
+# The colon trace spelling, parsed to exact port indices: unambiguous for any
+# port count (concatenated names cannot express 11+ ports unambiguously,
+# which is exactly why spectre switches to colons there).
+_COLON_NAME_RE = re.compile(r"^([syz])(\d+):(\d+)$")
+
+
+def _trace_series(data, kind, i, j):
+    """The complex series stored under either trace spelling, or None.
+
+    `data` keeps the file's RAW spelling as key; callers probe both forms so
+    concatenated (< 10 ports) and colon (>= 10 ports) files share one path.
+    Concatenated first: below ten ports that is the only form spectre writes.
+    """
+    for key in ("%s%d%d" % (kind, i, j), "%s%d:%d" % (kind, i, j)):
+        series = data.get(key)
+        if series is not None:
+            return series
+    return None
+
+
+def _trace_label(kind, i, j):
+    """The spelling a trace label uses: colon once either index needs 2 digits
+    (matching the flatten-output key rule in spectre/spectre_psf_parse.py)."""
+    return "%s%d:%d" % (kind, i, j) if i >= 10 or j >= 10 else "%s%d%d" % (kind, i, j)
 # case-insensitive PORT: direct spectre writes uppercase "PORT0:..." (0-based),
 # EMX writes lowercase "port1:..." (1-based) - port numbering is taken from the
 # PORT<k>:num field when present, so either flavour maps correctly
@@ -339,7 +366,7 @@ def parse_psfascii(path):
                         num_by_idx[int(m.group(1))] = int(m.group(3))
                 continue
             if section == "TRACE":
-                m = re.match(r'^"(\w+)"', s)
+                m = re.match(r'^"([^"]+)"', s)
                 if m and m.group(1) not in data:
                     trace.append(m.group(1))
                     data[m.group(1)] = []
@@ -373,11 +400,17 @@ def parse_psfascii(path):
         z_by_port.setdefault(k if idx_one_based else k + 1, r)
 
     def detect_n(kind):
-        # multi-digit port names (n >= 10): an even digit count splits half
-        # and half ("S1010" -> 10,10); plain 2-digit names stay 1+1. Odd
-        # counts are ambiguous and stay unmatched, as before.
+        # Colon names (>= 10 ports) parse to exact indices. Concatenated
+        # multi-digit names (the legacy/synthetic form): an even digit count
+        # splits half and half ("S1010" -> 10,10); plain 2-digit names stay
+        # 1+1. Odd counts are ambiguous and stay unmatched, as before.
         n = 0
         for name in data:
+            mc = _COLON_NAME_RE.match(name)
+            if mc:
+                if mc.group(1) == kind:
+                    n = max(n, int(mc.group(2)), int(mc.group(3)))
+                continue
             m = re.match(r"^%s(\d+)$" % kind, name)
             if m:
                 digits = m.group(1)
@@ -396,9 +429,9 @@ def parse_psfascii(path):
     if kind is None:
         raise SnpError("no S/Z/Y traces found in %s" % path)
     n = detect_n(kind.lower()) or nport_hdr or 1
-    missing = ["%s%d%d" % (kind.lower(), i + 1, j + 1)
+    missing = [_trace_label(kind.lower(), i + 1, j + 1)
                for i in range(n) for j in range(n)
-               if len(data.get("%s%d%d" % (kind.lower(), i + 1, j + 1), [])) != len(freq)]
+               if len(_trace_series(data, kind.lower(), i + 1, j + 1) or []) != len(freq)]
     if missing:
         raise SnpError("incomplete %s-param traces in %s: %s"
                        % (kind, path, ",".join(missing[:4])))
@@ -412,7 +445,7 @@ def parse_psfascii(path):
         m = [[0j] * n for _ in range(n)]
         for i in range(n):
             for j in range(n):
-                m[i][j] = data["%s%d%d" % (kind.lower(), i + 1, j + 1)][k]
+                m[i][j] = _trace_series(data, kind.lower(), i + 1, j + 1)[k]
         mats.append(m)
     desc = "psfascii sp (%s-params, %d pts, z0=%s)" % (kind, len(freq), z0[0])
     return SNPData(freq, mats, kind, z0, str(path), desc, warnings)

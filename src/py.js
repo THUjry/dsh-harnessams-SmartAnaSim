@@ -25,6 +25,9 @@ export async function runPython(scriptRel, args, timeoutMs = 900_000, options = 
   if (!fs.existsSync(abs)) throw new Error(`pipeline script missing: ${abs}`)
   // options.env MERGES into the child env (callers thread per-session facts
   // like DSH_SESSION_ID through; a full env replacement would drop PATH etc.).
+  // options.signal rides execFile's native AbortSignal support: the session
+  // stop kills the python child at once (D-029 discipline; the long-running
+  // tools — snp_read, snp_extract, post_check — pass their exec.signal).
   const { env: extraEnv, ...rest } = options
   const opts = {
     timeout: timeoutMs,

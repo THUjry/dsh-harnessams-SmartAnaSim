@@ -44,7 +44,7 @@ Statement shape (cascade testbench style): `sp sp ports=[PORT0 PORT1] start=1G s
 
 - **`paramtype=yz` emits Y- and Z-parameter results alongside S** — one `sp` run therefore yields the S, Y and Z matrices together, no re-run needed; leave it off when only S is wanted.
 - Ports are `PORT0 ... port r=50 type=sine` / `PORT1 ... port r=50 type=dc` elements; the `ports=[...]` list fixes the port ordering of the matrices.
-- **Result organization**: the psfascii `sp.sp` holds one frequency vector plus the flattened matrix traces (`s11..sNN` complex curves; with `paramtype=yz` the Y/Z traces join them) — per point `NN/` of a sweep, under `netlist.scs.raw/`.
+- **Result organization**: the psfascii `sp.sp` holds one frequency vector plus the flattened matrix traces (`s11..sNN` complex curves; with `paramtype=yz` the Y/Z traces join them) — per point `NN/` of a sweep, under `netlist.scs.raw/`. From ten ports up spectre switches the trace NAME to the colon spelling (`s1:12`); the parser accepts both, and the flattened output keys follow the same rule — concatenated while every port index is a single digit, colon once either index needs two digits.
 
 ## Swept PSS (`sweeppss` + `pss`, the `template_thorough.scs` variant)
 

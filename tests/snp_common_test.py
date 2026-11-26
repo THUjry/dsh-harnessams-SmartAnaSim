@@ -102,6 +102,55 @@ def test_psf_detect_n_multi_digit():
         assert zd2.n_ports == 2, zd2.n_ports
 
 
+def _write_colon_sp(path, n):
+    """A colon-spelling psfascii fixture with per-cell distinct values
+    (real=i/100, imag=j/100) so matrix placement is checkable cell by cell."""
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("HEADER\n")
+        f.write('"number of ports" %d\n' % n)
+        f.write("VALUE\n")
+        f.write('"freq" 1e9\n')
+        for i in range(1, n + 1):
+            for j in range(1, n + 1):
+                f.write('"s%d:%d" (%.2f %.2f)\n' % (i, j, i / 100.0, j / 100.0))
+        f.write("END\n")
+
+
+def test_psf_colon_trace_names():
+    # spectre writes the COLON spelling from ten ports up ("s1:12") — the
+    # old `\w+` capture dropped every such VALUE line silently, so a >= 10
+    # port sp.sp read as "no S/Z/Y traces found"
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, "colon10.sp")
+        _write_colon_sp(p, 10)
+        zd = sc.parse_psfascii(p)
+        assert zd.n_ports == 10, zd.n_ports
+        assert len(zd.mats[0]) == 10 and len(zd.mats[0][5]) == 10
+        assert abs(zd.mats[0][0][0].real - 0.01) < 1e-12, zd.mats[0][0][0]
+        assert abs(zd.mats[0][4][9].real - 0.05) < 1e-12, zd.mats[0][4][9]
+        assert abs(zd.mats[0][4][9].imag - 0.10) < 1e-12, zd.mats[0][4][9]
+        # a 25-port deck (the 2026-11-26 incident shape) parses end to end
+        p25 = os.path.join(tmp, "colon25.sp")
+        _write_colon_sp(p25, 25)
+        zd25 = sc.parse_psfascii(p25)
+        assert zd25.n_ports == 25, zd25.n_ports
+        assert abs(zd25.mats[0][24][24].real - 0.25) < 1e-12, zd25.mats[0][24][24]
+
+
+def test_psf_colon_names_stay_distinct_at_11_ports():
+    # at >= 11 ports the concatenated spelling is ambiguous ("s111" would be
+    # both (1,11) and (11,1)) — which is WHY spectre writes colons there. The
+    # colon names must map to their exact cells, not collapse into one key.
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, "colon11.sp")
+        _write_colon_sp(p, 11)
+        zd = sc.parse_psfascii(p)
+        assert zd.n_ports == 11, zd.n_ports
+        assert abs(zd.mats[0][0][10].real - 0.01) < 1e-12, zd.mats[0][0][10]   # (1,11)
+        assert abs(zd.mats[0][10][0].real - 0.11) < 1e-12, zd.mats[0][10][0]   # (11,1)
+        assert abs(zd.mats[0][10][0].imag - 0.01) < 1e-12, zd.mats[0][10][0]
+
+
 def test_params_csv_duplicate_frequency():
     # a repeated frequency block used to merge silently over the first copy
     # (and emit the merged matrix twice); the first copy now wins, with a
@@ -147,6 +196,8 @@ def main():
     test_touchstone_unit_order()
     test_psf_port_base_unification()
     test_psf_detect_n_multi_digit()
+    test_psf_colon_trace_names()
+    test_psf_colon_names_stay_distinct_at_11_ports()
     test_params_csv_duplicate_frequency()
     test_z_to_s2_single_z0_broadcast()
     print("snp_common tests ok")
