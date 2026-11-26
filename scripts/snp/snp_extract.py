@@ -602,7 +602,12 @@ def ctl_curves(freq, mats4):
 # ---------------------------------------------------------------------------
 
 
-def _majority_positive(series, upto):
+def _mostly_positive(series, upto):
+    """True when >= 70% of the non-null values up to index `upto` are positive.
+
+    Named for what it actually checks (renamed from _majority_positive, which
+    claimed a simple majority while enforcing 70%): the physicality bar is
+    deliberately stricter than 50%."""
     vals = [v for v in series[: upto + 1] if v is not None]
     if not vals:
         return False
@@ -626,10 +631,10 @@ def physicality(dev, cur, i_ex):
             reasons.append("k undefined at extraction freq")
         elif k is not None and abs(k) > 1.05:
             reasons.append("|k|>1.05 (%.3f)" % abs(k))
-        if has1 and not _majority_positive(cur["L1"], i_ex):
-            reasons.append("L1 not majority-positive below f_ex")
-        if has2 and not _majority_positive(cur["L2"], i_ex):
-            reasons.append("L2 not majority-positive below f_ex")
+        if has1 and not _mostly_positive(cur["L1"], i_ex):
+            reasons.append("L1 not mostly-positive (>=70% of band) below f_ex")
+        if has2 and not _mostly_positive(cur["L2"], i_ex):
+            reasons.append("L2 not mostly-positive (>=70% of band) below f_ex")
         lsum = (l1 or 0) + (l2 or 0)
         return (not reasons), reasons, lsum
     if dev == "inductor":
@@ -638,8 +643,8 @@ def physicality(dev, cur, i_ex):
             reasons.append("L<=0 at extraction freq")
         if q is None or q <= 0:
             reasons.append("Q<=0 at extraction freq")
-        if not _majority_positive(cur["L"], i_ex):
-            reasons.append("L not majority-positive below f_ex")
+        if not _mostly_positive(cur["L"], i_ex):
+            reasons.append("L not mostly-positive (>=70% of band) below f_ex")
         return (not reasons), reasons, (l or 0)
     if dev == "tl":
         zc, th = cur["Zc"][i_ex], cur["theta"][i_ex]
@@ -735,6 +740,14 @@ def pick_fex_index(freq, freq_hz):
         target = math.sqrt(lo * hi)
     else:
         target = float(freq_hz)
+        # an out-of-band target used to clamp to the nearest endpoint in total
+        # silence — say so, because the reported f_ex is the endpoint, not
+        # what was asked for
+        lo, hi = min(pos), max(pos)
+        if target < lo or target > hi:
+            print("[snp] warning: --freq-hz %.6g lies outside the data band "
+                  "[%.6g, %.6g] Hz; clamping to the nearest endpoint"
+                  % (target, lo, hi), file=sys.stderr)
     return min(range(len(freq)), key=lambda i: abs(freq[i] - target))
 
 
@@ -818,8 +831,26 @@ def main(argv=None):
         print("[snp] error: %s" % e, file=sys.stderr)
         return 2
     n = zd.n_ports
-    zref = zd.z0[0] if zd.z0 and len(set(round(v, 6) for v in zd.z0[:n])) == 1 else 50.0
+    # a single shared z0 becomes the reference impedance; unequal (or absent)
+    # per-port z0 falls back to 50 ohm — WITH a warning now, since the fallback
+    # feeds Gmax normalization and used to distort it silently
+    z0_set = set(round(v, 6) for v in (zd.z0 or [])[:n])
+    zref = zd.z0[0] if zd.z0 and len(z0_set) == 1 else 50.0
+    if len(z0_set) != 1:
+        print("[snp] warning: per-port z0 values are unequal or absent; zref "
+              "falls back to 50 ohm (feeds Gmax normalization)", file=sys.stderr)
     dev = args.type
+    # irrelevant-parameter warnings: each of these flags feeds exactly one
+    # extraction type and used to be accepted silently everywhere
+    if args.length_m is not None and dev != "tl":
+        print("[snp] warning: --length-m applies only to type tl (got %s); ignored" % dev,
+              file=sys.stderr)
+    if args.theory_gate is not None and dev != "coupled_tl":
+        print("[snp] warning: --theory-gate applies only to type coupled_tl (got %s); ignored" % dev,
+              file=sys.stderr)
+    if (args.coil3 is not None or args.coil4 is not None) and dev != "coupled_tl":
+        print("[snp] warning: --coil3/--coil4 apply only to type coupled_tl (got %s); ignored" % dev,
+              file=sys.stderr)
 
     try:
         plan0 = build_default_plan(dev, n, se)
@@ -916,8 +947,10 @@ def main(argv=None):
     unphysical = not full["ok"]
     if unphysical:
         result["physicality"] = {"ok": False, "reasons": full["reasons"]}
+        # warnings belong on stderr like every other diagnostic; stdout keeps
+        # only the result lines (data consumers parse it)
         for w in full["reasons"]:
-            print("[snp] warning: physicality: %s" % w)
+            print("[snp] warning: physicality: %s" % w, file=sys.stderr)
 
     out_dir = Path(args.out_dir) if args.out_dir else Path(args.file).resolve().parent
     try:

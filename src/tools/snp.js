@@ -53,6 +53,29 @@ function fallbackStem(file) {
   return path.basename(String(file)).replace(/\.[^.]+$/, '')
 }
 
+// snp_extract's declared parameters, hoisted so execute() can reject unknown
+// keys against the very same list: the argv-passthrough loop used to forward
+// ANY key as an invented CLI flag (validateArgs only checks declared
+// properties), and the python side failed on a flag it never declared.
+const EXTRACT_PARAMS = {
+  file: { type: 'string', required: true, description: 'Params CSV path (the snp_read product)' },
+  type: { type: 'string', required: true, enum: ['tl', 'coupled_tl', 'transformer', 'inductor'],
+    description: 'tl | coupled_tl | transformer | inductor' },
+  freq_hz: { type: 'number', description: 'Extraction frequency in Hz (default: band geometric midpoint)' },
+  coil1: { type: 'string', description: 'Side-1 / near differential pair ports, e.g. "1,2"; one port = single-ended side' },
+  coil2: { type: 'string', description: 'Side-2 / far differential pair ports' },
+  coil3: { type: 'string', description: 'coupled_tl 8-port: third differential pair' },
+  coil4: { type: 'string', description: 'coupled_tl 8-port: fourth differential pair' },
+  coil: { type: 'string', description: 'Inductor coil ports (1 or 2)' },
+  ct1: { type: 'number', description: 'Transformer primary center-tap port number' },
+  ct2: { type: 'number', description: 'Transformer secondary center-tap port number' },
+  ct: { type: 'number', description: 'Inductor center-tap port number' },
+  se: { type: 'string', description: 'Ports to ground during extraction (V=0), comma list, e.g. "2" or "2,4"' },
+  length_m: { type: 'number', description: 'Physical length in meters (tl: enables eps_eff and alpha per length)' },
+  theory_gate: { type: 'number', description: 'coupled_tl relative off-block residual gate for theory_ok' },
+  out_dir: { type: 'string', description: 'Output directory (default: beside the input file)' },
+}
+
 export function snpTools() {
   return [
     {
@@ -123,25 +146,12 @@ export function snpTools() {
         + 'unphysical mappings are auto-adjusted against physicality checks and the result echoes a port_plan. '
         + 'An unphysical result returns ok=false WITH summary/port_plan (the JSON is written even on the '
         + 'unphysical exit) — inspect port_plan and the physicality reasons before retrying.',
-      parameters: {
-        file: { type: 'string', required: true, description: 'Params CSV path (the snp_read product)' },
-        type: { type: 'string', required: true, enum: ['tl', 'coupled_tl', 'transformer', 'inductor'],
-          description: 'tl | coupled_tl | transformer | inductor' },
-        freq_hz: { type: 'number', description: 'Extraction frequency in Hz (default: band geometric midpoint)' },
-        coil1: { type: 'string', description: 'Side-1 / near differential pair ports, e.g. "1,2"; one port = single-ended side' },
-        coil2: { type: 'string', description: 'Side-2 / far differential pair ports' },
-        coil3: { type: 'string', description: 'coupled_tl 8-port: third differential pair' },
-        coil4: { type: 'string', description: 'coupled_tl 8-port: fourth differential pair' },
-        coil: { type: 'string', description: 'Inductor coil ports (1 or 2)' },
-        ct1: { type: 'number', description: 'Transformer primary center-tap port number' },
-        ct2: { type: 'number', description: 'Transformer secondary center-tap port number' },
-        ct: { type: 'number', description: 'Inductor center-tap port number' },
-        se: { type: 'string', description: 'Ports to ground during extraction (V=0), comma list, e.g. "2" or "2,4"' },
-        length_m: { type: 'number', description: 'Physical length in meters (tl: enables eps_eff and alpha per length)' },
-        theory_gate: { type: 'number', description: 'coupled_tl relative off-block residual gate for theory_ok' },
-        out_dir: { type: 'string', description: 'Output directory (default: beside the input file)' },
-      },
+      parameters: EXTRACT_PARAMS,
       async execute(args, exec) {
+        const unknown = Object.keys(args).filter((k) => !(k in EXTRACT_PARAMS))
+        if (unknown.length) {
+          throw new Error(`snp_extract: unknown parameter(s): ${unknown.join(', ')} — valid keys: ${Object.keys(EXTRACT_PARAMS).join(', ')}`)
+        }
         const argv = ['--file', String(args.file), '--type', String(args.type)]
         for (const [k, v] of Object.entries(args)) {
           if (['file', 'type', 'out_dir'].includes(k) || v === undefined || v === null || v === '') continue

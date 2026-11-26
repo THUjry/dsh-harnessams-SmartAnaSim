@@ -347,3 +347,33 @@ test('tool face: snp_extract with no JSON on failure still throws', async () => 
   await assert.rejects(() => snpTools().find((d) => d.name === 'snp_extract').execute({ file: missing, type: 'tl' }),
     /snp_extract failed/)
 })
+
+test('tool face: snp_extract rejects unknown parameter keys with the valid list', async () => {
+  // the argv passthrough used to forward ANY key as an invented CLI flag
+  // (validateArgs only checks declared properties) — reject here instead
+  const s = await synth('tl2', 'tl2.s2p')
+  const csv = await toCsv(s.file)
+  await assert.rejects(() => snpTools().find((d) => d.name === 'snp_extract')
+    .execute({ file: csv, type: 'tl', freq: 1e9 }),
+    /unknown parameter\(s\): freq\b.*valid keys: file, type, freq_hz/)
+})
+
+test('snp_extract: out-of-band --freq-hz and irrelevant flags warn on stderr', async () => {
+  // an out-of-band target clamps to the nearest endpoint WITH a warning now
+  // (it used to clamp in silence); a coupled_tl-only flag on type tl warns too
+  const s = await synth('tl2', 'tl2.s2p')
+  const input = await toCsv(s.file)
+  const out = tmp()
+  const { stderr } = await execFileAsync('python', ['-B', EXTRACT, '--file', input,
+    '--type', 'tl', '--freq-hz', '1e12', '--theory-gate', '0.1', '--out-dir', out],
+    { timeout: 300_000 })
+  assert.match(stderr, /--freq-hz .* lies outside the data band.*clamping/)
+  assert.match(stderr, /--theory-gate applies only to type coupled_tl/)
+})
+
+test('snp_common: touchstone unit order, psf port base, duplicate freq, z0 guard', async () => {
+  const { stdout } = await execFileAsync('python',
+    ['-B', path.join(ROOT, 'tests', 'snp_common_test.py')],
+    { timeout: 120_000, cwd: ROOT })
+  assert.match(stdout, /snp_common tests ok/)
+})

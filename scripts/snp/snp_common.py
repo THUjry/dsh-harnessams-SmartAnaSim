@@ -187,6 +187,7 @@ def parse_touchstone(path):
     funit, fmt, rref = "HZ", "MA", 50.0
     saw_option = False
     nums = []
+    warnings = []  # collected during the scan (unit-order note) and after it
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError as e:
@@ -198,8 +199,17 @@ def parse_touchstone(path):
         if line.startswith("#"):
             saw_option = True
             tk = line.lstrip("#! \t").upper().split()
-            if tk and tk[0] in _FREQ_SCALE:
-                funit = tk[0]
+            # the frequency unit is position-independent: only tk[0] used to be
+            # checked, so a non-standard order ("# MA R 50 GHZ") silently kept
+            # the HZ default — scan every token and flag the odd position
+            for ti, word in enumerate(tk):
+                if word in _FREQ_SCALE:
+                    funit = word
+                    if ti != 0:
+                        warnings.append("frequency unit %s at token %d of the "
+                                        "option line (non-standard order): applied"
+                                        % (word, ti + 1))
+                    break
             for word in ("RI", "MA", "DB"):
                 if word in tk:
                     fmt = word
@@ -227,7 +237,6 @@ def parse_touchstone(path):
                 raise SnpError("non-finite token %r (nan/inf rejected) in %s"
                                % (tok, path))
             nums.append(v)
-    warnings = []
     if not saw_option:
         warnings.append("no '#' option line: defaults HZ/MA/R 50 assumed")
     ncol = 1 + 2 * n * n
@@ -297,8 +306,11 @@ def parse_psfascii(path):
     data = {}            # name -> list of complex
     freq = []
     nport_hdr = None
-    r_by_idx = {}        # PORT<k>:r  -> impedance
+    r_by_idx = {}        # PORT<k>:r  -> impedance (key = the k in the name)
     num_by_idx = {}      # PORT<k>:num -> 1-based port number
+    idx_one_based = False  # EMX writes lowercase "port<k>:" with 1-based k;
+    #                      # spectre's uppercase "PORT<k>:" is 0-based (see the
+    #                      # regex note above) — the no-num fallback needs this
     section = None
     try:
         fh = open(path, "r", encoding="utf-8", errors="replace")
@@ -319,6 +331,8 @@ def parse_psfascii(path):
                     continue
                 m = _PSF_PORT_RE.match(s)
                 if m:
+                    if m.group(0)[1].islower():  # "port<k>:" EMX flavour
+                        idx_one_based = True
                     if m.group(2) == "r":
                         r_by_idx[int(m.group(1))] = float(m.group(3))
                     else:
@@ -349,17 +363,29 @@ def parse_psfascii(path):
     if not freq:
         raise SnpError("no VALUE/freq points in %s" % path)
     z_by_port = {}
-    for idx, pnum in num_by_idx.items():
-        z_by_port[pnum] = r_by_idx.get(idx, 50.0)
-    for idx, r in r_by_idx.items():
-        z_by_port.setdefault(idx + 1, r)
+    for k, pnum in num_by_idx.items():
+        # pnum is the file-declared 1-based port number — authoritative
+        z_by_port[pnum] = r_by_idx.get(k, 50.0)
+    for k, r in r_by_idx.items():
+        # fallback without a num field: the k in the name is 0-based for
+        # spectre "PORT<k>:" and 1-based for EMX "port<k>:" — the old blanket
+        # idx+1 was right for spectre and one port high for EMX
+        z_by_port.setdefault(k if idx_one_based else k + 1, r)
 
     def detect_n(kind):
+        # multi-digit port names (n >= 10): an even digit count splits half
+        # and half ("S1010" -> 10,10); plain 2-digit names stay 1+1. Odd
+        # counts are ambiguous and stay unmatched, as before.
         n = 0
         for name in data:
-            m = re.match(r"^%s(\d)(\d)$" % kind, name)
+            m = re.match(r"^%s(\d+)$" % kind, name)
             if m:
-                n = max(n, int(m.group(1)), int(m.group(2)))
+                digits = m.group(1)
+                if len(digits) == 2:
+                    n = max(n, int(digits[0]), int(digits[1]))
+                elif len(digits) >= 4 and len(digits) % 2 == 0:
+                    half = len(digits) // 2
+                    n = max(n, int(digits[:half]), int(digits[half:]))
         return n
 
     kind = None
@@ -459,18 +485,34 @@ def parse_params_csv(path):
     zref = [float(v) for v in meta.get("zref", "50").split(",")]
     freqs = []
     seen = {}
+    dup_notes = []
     for f, i, j, re_, im_ in rows:
-        if j == 0 and i == 0:
-            freqs.append(f)
-        seen.setdefault(f, {})[(i, j)] = complex(re_, im_)
+        if i == 0 and j == 0:
+            if f in seen:
+                note = "duplicate frequency block at %.17g Hz (first kept)" % f
+                if note not in dup_notes:
+                    dup_notes.append(note)
+            else:
+                freqs.append(f)
+        block = seen.setdefault(f, {})
+        if (i, j) in block:
+            note = "duplicate entry %.17g Hz (%d,%d) (first kept)" % (f, i + 1, j + 1)
+            if note not in dup_notes:
+                dup_notes.append(note)
+        else:
+            block[(i, j)] = complex(re_, im_)
     mats = []
     for f in freqs:
         block = seen[f]
         if len(block) != n * n:
             raise SnpError("params CSV %s: incomplete matrix at %g Hz" % (path, f))
         mats.append([[block[(i, j)] for j in range(n)] for i in range(n)])
+    # a repeated frequency block used to merge silently over the first (and
+    # emit the merged matrix twice); now the first copy wins and it is said
+    warnings = (["params CSV %s: %s" % (path, "; ".join(dup_notes[:5]))]
+                if dup_notes else [])
     desc = "params csv (%s, %d pts)" % (param, len(freqs))
-    return SNPData(freqs, mats, param, zref, str(path), desc, [])
+    return SNPData(freqs, mats, param, zref, str(path), desc, warnings)
 
 
 # ---------------------------------------------------------------------------
@@ -564,7 +606,11 @@ def to_z(data, drop_bad=True):
 def z_to_s2(zmat, z0):
     """Single NxN Z matrix -> S with per-port real z0 (list)."""
     n = len(zmat)
-    sq = [math.sqrt(v) for v in z0[:n]]
+    # length guard, to_z's precedent: a single z0 entry (params CSV
+    # 'zref=50' with n>1 ports) broadcasts to every port instead of raising
+    # IndexError on sq[i]
+    sq = ([math.sqrt(v) for v in z0[:n]] if len(z0) >= n
+          else [math.sqrt(z0[0] if z0 else 50.0)] * n)
     w = [[zmat[i][j] / (sq[i] * sq[j]) for j in range(n)] for i in range(n)]
     im = _eye(n)
     return MATMUL(_msub(w, im), INV(_madd(w, im)))
