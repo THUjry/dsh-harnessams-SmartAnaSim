@@ -161,7 +161,7 @@ echoes a `port_plan` to confirm. An unphysical result exits 1 with the JSON
 
 ## Validation
 
-- `node --test` from the repo root (tool schema/registration + the bundled skill, script parsing + naming, PSF parsing incl. the two-layer contract and STRUCT flattening, post_check collect-all diagnostics, Spectre worker statuses with a fake process layer, and the S-parameter regression suite).
+- `node --test` from the repo root (tool schema/registration + the bundled skill, script parsing + naming, PSF parsing incl. the two-layer contract and STRUCT flattening, post_check collect-all diagnostics, Spectre worker mechanics with a fake process layer — process-group kill, max-merged timeout extensions, the 30 s progress cadence, and the S-parameter regression suite incl. `tests/snp_common_test.py` for the loader-level robustness contracts and the snp tool-face unknown-key rejection).
 - node1 Spectre dual-mode acceptance through the plugin tools, no direct shell or Python (2026-10-31, Broadband4 Round1 template, 2 states at 65 C): a direct-mode run on node1 (`compute_node=node1`, record `direct-1793437388485`) and an LSF run became Job **15929901** on node5; both returned 2/2 success. Both point metas and both `sp.sp` files were recovered (5135 lines each); the only difference in each pair is the PSF header `date`. `snp_read` on both files gives identical band/port/max|S|/reciprocity values, and the 1564 numeric CSV rows per point are identical. An earlier ssh-only acceptance used Job 15924601; it remains reproducible with `tests/manual/compare_spectre_runs.py <run-a> <run-b>`.
 
 ## What the package ships
