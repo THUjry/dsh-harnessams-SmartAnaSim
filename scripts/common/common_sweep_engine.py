@@ -139,7 +139,7 @@ def write_progress(work_dir, names, combos, toolchain=None):
     Returns the progress dict. Status is 'completed' when every point is
     success/partial, 'failed' when all points finished with a failure, else
     'running'. The optional toolchain dict (the worker's measured
-    interpreter/simulator paths, D-016/D-017 telemetry) is carried verbatim:
+    interpreter/simulator paths, D-006/D-003 telemetry) is carried verbatim:
     a green run's caller reads it back to pin what the job really ran under.
     """
     total = len(combos)

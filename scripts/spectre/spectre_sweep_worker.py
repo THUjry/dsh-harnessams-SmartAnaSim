@@ -310,7 +310,7 @@ def run_single_point(work_dir, idx, params, config, spectre_cmd):
 
 
 def probe_numpy_state():
-    """Numpy tri-state of THIS interpreter, for the toolchain telemetry (D-021).
+    """Numpy tri-state of THIS interpreter, for the toolchain telemetry (D-002).
 
     "yes" = numpy imports natively; "fallback" = numpy is missing but the
     staged numfallback asset (the pure-stdlib numpy shim at
@@ -393,7 +393,7 @@ def main(argv=None):
         print(msg, file=sys.stderr)
         return 2
     spectre_cmd = probe
-    # toolchain telemetry (D-016/D-017, numpy leg added D-021): what THIS job
+    # toolchain telemetry (D-006/D-003, numpy leg added D-008): what THIS job
     # really runs under — the interpreter (sys.executable), the resolved
     # spectre binary, the hostname, and the numpy tri-state of this very
     # interpreter (yes / fallback / no; fallback = the staged numfallback
