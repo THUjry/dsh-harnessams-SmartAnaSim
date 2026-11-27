@@ -667,9 +667,11 @@ def _point_raw_dir(run_dir, point):
     return None
 
 
-def _point_names(run_dir):
-    # numeric order: pure lexicographic sort put "100" before "11" once a run
-    # passed 99 point directories
+def point_names(run_dir):
+    """The NN-named point directories of a run, in numeric order (pure
+    lexicographic sort put "100" before "11" once a run passed 99 points).
+    The single implementation — the worker's point_name() convention, the
+    batch-side readers and post_check all address points through this rule."""
     return sorted((n for n in os.listdir(run_dir)
                    if re.fullmatch(r"\d{2,}", n) and os.path.isdir(os.path.join(run_dir, n))),
                   key=int)
@@ -729,7 +731,7 @@ def main(argv=None):
         print("work dir does not exist: %s" % run_dir, file=sys.stderr)
         return 2
     out_dir = os.path.abspath(args.out_dir) if args.out_dir else os.path.join(run_dir, "psf")
-    points = _point_names(run_dir)
+    points = point_names(run_dir)
     if not points:
         print("no point directories (NN) in %s" % run_dir, file=sys.stderr)
         return 1

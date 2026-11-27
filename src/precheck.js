@@ -48,8 +48,14 @@ function freshDefaults() {
   }
 }
 
+// BOM-tolerant (aligned with common_workspace.read_check_params, which reads
+// with utf-8-sig: a BOM'd project file must apply in BOTH chains, not only
+// the python one).
 function readJsonSafe(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return null }
+  try {
+    const text = fs.readFileSync(file, 'utf8')
+    return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)
+  } catch { return null }
 }
 
 // Merge one layer (project file or session table) over params, per key,
@@ -473,7 +479,7 @@ export async function runPreCheck(runDir, sessionId) {
   const templateFile = path.join(dir, templateName)
   // Parallel input load: the template text and the check-parameter chain are
   // independent reads; a missing template is an input error, not a throw — the
-  // caller (model or batch_submit) reads the structured list either way.
+  // caller (the model or a managed flow) reads the structured list either way.
   const [templateRes, chain] = await Promise.all([
     fsp.readFile(templateFile, 'utf8').then((text) => ({ ok: true, text }), (e) => ({ ok: false, error: e })),
     Promise.resolve(readCheckParamsChain(dir, sessionId)),

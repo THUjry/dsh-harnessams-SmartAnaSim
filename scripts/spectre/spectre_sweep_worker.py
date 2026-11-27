@@ -70,7 +70,6 @@ from common.common_sweep_engine import (  # noqa: E402
     generate_combinations, init_worker_state, point_name, utc_now,
     write_errlog, write_progress, write_simulator,
 )
-from common.common_workspace import atomic_write_json, utc_now, write_errlog  # noqa: E402
 from spectre.spectre_psf_parse import parse_psf_ascii_file, scalar_signals  # noqa: E402
 
 print_lock = threading.Lock()

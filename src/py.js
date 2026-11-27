@@ -57,9 +57,12 @@ export function cliError(e) {
   return detail || String(e?.message ?? e)
 }
 
+// BOM-tolerant read (aligned with common_workspace's utf-8-sig reads: a
+// zh-CN Windows hand-edit must not silently vanish the summary).
 export function readJsonIfExists(file) {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
+    const text = fs.readFileSync(file, 'utf8')
+    return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)
   } catch {
     return null
   }
@@ -75,11 +78,4 @@ export function readJsonIfExists(file) {
 export function sessionEnv(exec, ctx) {
   const sid = effectiveSessionId(ctx, exec?.agent)
   return sid ? { DSH_SESSION_ID: sid } : {}
-}
-
-export function resolveDir(dir) {
-  if (!dir || typeof dir !== 'string') throw new Error('a directory path is required')
-  const abs = path.resolve(dir)
-  if (!fs.existsSync(abs)) throw new Error(`directory does not exist: ${abs}`)
-  return abs
 }

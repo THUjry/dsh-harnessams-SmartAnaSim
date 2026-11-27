@@ -246,7 +246,7 @@ test('zero is the legal degenerate element for every RCL kind', async () => {
 test('regression: a session-tightened 1nF capacitor floor blocks the fF scan', async () => {
   // The Check20261125_2 origin scenario, fixed: the netlist is the NEW idiom
   // (c=cpf + suffixed values) and the session layer tightens c to [1n, 1uF] —
-  // every nonzero fF value must flag, so batch_submit's gate throws.
+  // every nonzero fF value must flag, so the managed flow's gate throws.
   const ws = mkdtempSync(path.join(tmpdir(), 'hams-1nf-'))
   mkdirSync(path.join(ws, '.harnessams'))
   writeFileSync(path.join(ws, '.harnessams', 'sessions.json'), JSON.stringify({
@@ -363,6 +363,21 @@ test('check-parameter chain: builtin <- project <- session, fail-open', () => {
   assert.deepEqual(corrupt.params.rcl.c, [1e-15, 1e-6]) // default c back
 })
 
+test('a BOM-prefixed project check_params.json still applies (utf-8-sig parity)', () => {
+  // python reads the same file with utf-8-sig (common_workspace); a zh-CN
+  // Windows hand-edit carrying a BOM must apply in BOTH chains, not only
+  // the python one (the JS read used to throw on it and silently fail open)
+  const ws = mkdtempSync(path.join(tmpdir(), 'hams-bom-'))
+  mkdirSync(path.join(ws, '.harnessams'))
+  writeFileSync(path.join(ws, '.harnessams', 'check_params.json'),
+    '\uFEFF' + JSON.stringify({ rcl: { c: [1e-15, 1e-9] } }))
+  const run1 = path.join(ws, 'run1')
+  mkdirSync(run1)
+  const project = readCheckParamsChain(run1, 'no-such-session')
+  assert.equal(project.source, 'project', 'the BOM must not read as a corrupt file')
+  assert.deepEqual(project.params.rcl.c, [1e-15, 1e-9])
+})
+
 test('the chain drives the gates: same netlist, different effective ranges', async () => {
   const ws = mkdtempSync(path.join(tmpdir(), 'hams-chain2-'))
   mkdirSync(path.join(ws, '.harnessams'))
@@ -404,7 +419,7 @@ test('the tool face resolves the session from exec.agent.id', async () => {
   const direct = await tool.execute({ run_dir: runDir }, { agent: { id: 'sess-direct' } })
   assert.equal(direct.ok, true, JSON.stringify(direct))
   assert.equal(direct.params_source, 'session')
-  // an explicit session_id argument wins (batch_submit passes it because a
+  // an explicit session_id argument wins (a managed-flow caller passes it because a
   // nested tool call's exec does not reliably carry the original agent id)
   const explicit = await tool.execute({ run_dir: runDir, session_id: 'sess-direct' }, {})
   assert.equal(explicit.ok, true)

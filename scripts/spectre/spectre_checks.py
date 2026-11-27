@@ -55,6 +55,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common.common_units import (  # noqa: E402,F401  (re-exported for gen scripts)
     CheckError, fmt_num, norm_count, norm_freq, norm_length_si,
 )
+from common.common_workspace import CHECK_PARAMS_DEFAULTS  # noqa: E402  (the single python-side defaults table)
 
 def _check_params():
     """Workspace check parameters (check_params.json), fail-open to defaults.
@@ -81,18 +82,19 @@ _RCL_DEVICE = {"resistor": "r", "res": "r", "capacitor": "c", "cap": "c",
                "inductor": "l", "ind": "l"}
 # Ideal plausibility ranges (inclusive) for generated netlists: 0.1 ohm..1M ohm,
 # 1 fF..1 uF, 0.1 pH..10 nH. Override via check_netlist_format(rcl_ranges=...);
-# the workspace default comes from .harnessams/check_params.json (rcl table).
+# derived from common_workspace.CHECK_PARAMS_DEFAULTS — the single python-side
+# copy of the table (the JS engine mirrors it in src/precheck.js).
 IDEAL_RCL_RANGES = {
-    "r": (0.1, 1e6),     # ohm
-    "c": (1e-15, 1e-6),  # farad
-    "l": (1e-13, 1e-8),  # henry
+    "r": tuple(CHECK_PARAMS_DEFAULTS["rcl"]["r"]),
+    "c": tuple(CHECK_PARAMS_DEFAULTS["rcl"]["c"]),
+    "l": tuple(CHECK_PARAMS_DEFAULTS["rcl"]["l"]),
 }
 # Multiplier plausibility ranges (inclusive): device fingers and the instance
 # multiplier are counts. Override via check_netlist_format(mult_ranges=...);
-# the workspace default comes from check_params.json (mult table).
+# the same defaults table (mult rows).
 MULT_RANGES = {
-    "nf": (1, 128),
-    "m": (1, 1000),
+    "nf": tuple(CHECK_PARAMS_DEFAULTS["mult"]["nf"]),
+    "m": tuple(CHECK_PARAMS_DEFAULTS["mult"]["m"]),
 }
 _IDEAL_RCL_RANGE_TEXT = {"r": "0.1..1M ohm", "c": "1f..1u farad", "l": "0.1p..10n henry"}
 _RCL_UNIT = {"r": "ohm", "c": "farad", "l": "henry"}

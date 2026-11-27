@@ -40,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from spectre.spectre_psf_parse import (  # noqa: E402
     axis,
     parse_psf_ascii_directory,
+    point_names,
     scalar,
     vector,
 )
@@ -315,8 +316,9 @@ def _raw_dirs_of(pdir):
 
 
 def _check_work_dir(work_dir, report):
-    points = sorted(n for n in os.listdir(work_dir)
-                    if re.fullmatch(r"\d{2,}", n) and os.path.isdir(os.path.join(work_dir, n)))
+    # the shared point-naming rule (spectre_psf_parse.point_names — the single
+    # implementation; numeric order, so a 100-point run lists 11 before 100)
+    points = point_names(work_dir)
     prog = _check_progress(report, work_dir, points)
     status_counts = {}
     point_records = []

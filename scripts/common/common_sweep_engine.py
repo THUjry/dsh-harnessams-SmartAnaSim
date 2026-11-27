@@ -197,23 +197,11 @@ def write_progress(work_dir, names, combos, toolchain=None):
     return prog
 
 
-def load_point_metas(work_dir, combos):
-    """Read point_meta.json for every combination index (None where missing)."""
-    metas = []
-    for i in range(len(combos)):
-        path = os.path.join(work_dir, point_name(i), "point_meta.json")
-        try:
-            with open(path, encoding="utf-8-sig") as f:
-                metas.append(json.load(f))
-        except (OSError, ValueError):
-            metas.append(None)
-    return metas
-
-
 __all__ = [
-    "PARAM_RE", "PROGRESS_PERIOD_SEC", "DEFAULT_PARAMS", "generate_combinations",
+    "PARAM_RE", "PROGRESS_PERIOD_SEC",
+    "DEFAULT_PARAMS", "generate_combinations",
     "build_netlist",
     "point_name", "init_worker_state", "write_simulator",
-    "read_simulator", "write_progress", "load_point_metas", "utc_now",
+    "read_simulator", "write_progress", "utc_now",
     "atomic_write_json", "write_errlog",
 ]

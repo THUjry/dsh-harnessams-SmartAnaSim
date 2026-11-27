@@ -5,3 +5,4 @@ simTemp/
 __pycache__/
 *.pyc
 .hams-wt/
+.pytest_cache/
