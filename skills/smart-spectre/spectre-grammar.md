@@ -2,7 +2,7 @@
 
 Netlist-language rules the templates and analyses rely on: placeholder discipline, the Spectre-vs-SPICE rules, units, and a section per analysis type spelling out its particularities — AC excitation, S-parameter `paramtype=yz` matrix output and result organization, the swept-PSS configuration and its pitfalls. The operational side — running, sweeping, parsing — lives in `spectre-cli.md`.
 
-## Template placeholder rules (`@@PARAM@@` in the `parameters` line only)
+## Template placeholder rules (`@@PARAM@@` on the `parameters` and `include` lines)
 
 The run directory holds one template netlist and one `sweep_config.json`. The template name is any `template*.scs` family member (default `template.scs`; e.g. `template_thorough.scs` for the PSS variant) — **the name must equal `sweep_config.netlist_template`**.
 
@@ -15,18 +15,37 @@ V2 (SW AVSS) vsource dc=1.2*SW type=dc          // Spectre references SW directl
 V3 (SWB AVSS) vsource dc=1.2*(1-SW) type=dc     // Spectre evaluates the expression
 ```
 
-Only the `parameters` line needs `@@...@@` placeholders. `@@(\w+)@@` matches `[a-zA-Z0-9_]+` only — `@@1-SW@@` will not resolve; write `1-SW` in the instance line instead. `spectre_pre_check` enforces this placement: `@@...@@` anywhere outside the `parameters` statement is an error, with the single exemption of `@@temperature@@` on a `simulatorOptions` line (the shipped sky130 templates carry it there — spectre does not reliably take a parameter reference in `simulatorOptions`). An undeclared `@@temperature@@` is a WARNING, not an error: the sweep worker substitutes the default 27 degC, so a netlist missing its temperature entry never fails the run.
+Only the `parameters` line needs `@@...@@` placeholders. `@@(\w+)@@` matches `[a-zA-Z0-9_]+` only — `@@1-SW@@` will not resolve; write `1-SW` in the instance line instead. `spectre_pre_check` enforces this placement: `@@...@@` anywhere outside the `parameters` and `include` statements is an error, with the single exemption of `@@temperature@@` on a `simulatorOptions` line (the shipped sky130 templates carry it there — spectre does not reliably take a parameter reference in `simulatorOptions`). An undeclared `@@temperature@@` is a WARNING, not an error: the sweep worker substitutes the default 27 degC, so a netlist missing its temperature entry never fails the run.
+
+`include` statements are the placement's second home: the placeholder may sit in the path string or the `section=` value — `include "corner_@@corner@@.scs"` or `include "sky130.scs" section=@@corner@@` — so a sweep can swap the included file per point (dspf extracts, corner sections). The worker substitutes text-wide, so the placeholder resolves there exactly like a parameters-line one; a sweep that only varies include text needs no `parameters` statement at all.
 
 ## Spectre vs SPICE rules (enforced by spectre_pre_check)
 
 - `simulator lang=spectre` must lead the netlist; SPICE-only directives are rejected: `.control` `.lib` `.include` `.param` `.model` `.tran` `.ac` `.dc`; the text is LF-only and pure ASCII
 - no scientific notation anywhere in the netlist — every number is a plain decimal or carries an explicit SI suffix (`1f`, `100M`, `200u`); `1e-15`-style exponents hide the scale and are rejected
 - `subckt`/`ends` must balance; Spectre-native statements carry no leading dot
-- template file names must match the `template*.scs` family; `@@P@@` placement (parameters statement only, `@@temperature@@` on a simulatorOptions line exempt) and placeholder/config presence (both directions; undeclared `@@temperature@@` stays a warning — worker default 27 degC) are rejected when violated
+- template file names must match the `template*.scs` family; `@@P@@` placement (parameters and include statements, `@@temperature@@` on a simulatorOptions line exempt) and placeholder/config presence (both directions; undeclared `@@temperature@@` stays a warning — worker default 27 degC) are rejected when violated
 - unit suffixes — geometry values (`l` `w` `lr` `wr`...) must carry u/n suffixes; frequencies G/M/k; counts are non-negative integers
 - `m`/`M` are case-sensitive per Spectre: `1Meg`, never `1M`
 - ideal RCL value positions accept a literal or a bare parameter name only — expressions (`c=(cpf*1f)` and the retired `c=(cpf*1e-15)`) are rejected: reference the parameter (`c=cpf`) and put the scale in suffixed sweep values (`"56f"`). Ranges: R 0.1..1e6 ohm, C 1f..1uF, L 0.1p..10nH (literals, name-referenced swept values, and C/R/L-initial config names); r/c/l = 0 is the legal degenerate element (short / open)
-- multiplier ranges — `nf` (device fingers) and `m` (instance multiplier) must be positive integers: nf 1..128, m 1..1000
+- multiplier gates — `nf` (device fingers) must be a positive integer in 1..128, with a WARNING at or above the `nf_warn` threshold (default 50, check_params); `m` (instance multiplier) is REJECTED by default — a `// m-release` comment on the m= line releases it, and the positive-integer range 1..1000 then applies (the m-semantics section below explains why)
+
+## The instance multiplier `m` — tiered semantics, rejected by default
+
+`m` is an instance-level generic parameter, not a model parameter: syntactically any instance line accepts `m=`, but whether the result actually scales depends on who implements the scaling — a netlist whose `m=` lines pass the check is not a netlist whose results scale by m. That gap is why `spectre_pre_check` rejects every `m=` by default (`m=1` included): add a `// m-release` comment on the same line as each verified `m=` to release it, and the 1..1000 range gate then applies.
+
+- **Spectre primitives** (`resistor`/`capacitor`/`inductor`, MOS, BJT, diode, JFET): the simulator scales — R → R/m (**divided**, not multiplied), C → C·m, L → L/m; currents, gm, gds and junction capacitances ×m; noise current density ×√m (noise power ×m).
+- **`subckt` instances** (most PDK devices are a subckt wrapper): the simulator replicates the whole subckt m times at elaboration — every device and node inside is copied, internal nodes renamed.
+- **Verilog-A / CMI custom models**: `m` is a reserved formal name — a module declaring it is ignored with a warning ("reserved for the subcircuit multiplicity factor"), and the model scales only if its author implemented it. Writing `m=` here guarantees nothing.
+- **Sources and `tline`** (`vsource`/`isource`/`port`): `m` is meaningless (parallel voltage sources are physically undefined) — do not rely on it.
+
+Three traps worth remembering:
+
+- **`m` multiplies down the hierarchy**: a parent subckt `m=2` around inner devices with `m=3` gives an effective 6 — and `info what=inst` reports only an instance's own m, never the accumulated one, so audit the netlist hierarchy for the total.
+- **`m` ≠ `nf`**: `nf` divides one device into fingers (per-finger parasitics, Rg distribution, per-finger junction geometry — AD/AS/PD/PS are per-finger values); `m` parallels whole devices with internal parasitics unchanged. In RF work they are not interchangeable: `nf` for Rg and switching-figure trade-offs, `m` for total width and drive.
+- **Monte-Carlo mismatch samples once per (subckt) instance**: `m=4` gets one mismatch offset shared by all four copies (fully correlated), while four independent instances draw four independent samples — replacing N parallel devices with `m=N` underestimates σ.
+
+Self-checks: `spectre -h <primitive>` for the parameter table; an `m=2`-vs-two-parallel-instances `.op` comparison (currents, gm, Cgg must differ by exactly 2× — a mismatch means the device or the PDK's CDF output is broken); `Tools → CDF → Edit` — simInfo `instParameters` must contain `m` (old PDK conversions silently emit `m=1` no matter the schematic multiplier), and a subckt that multiplies internally stacks with an outer `m` — don't double-count.
 
 ## Analysis statements — shared rules
 
