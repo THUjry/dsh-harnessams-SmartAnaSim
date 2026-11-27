@@ -68,13 +68,14 @@ export function readJsonIfExists(file) {
   }
 }
 
-// Per-session env overlay for Python workers (HarnessAMS D-003): the calling
+// Per-session env overlay for Python workers: the calling
 // session's id rides DSH_SESSION_ID and common_workspace.read_check_params
 // resolves that session's confirmed check table with it. A delegated subagent
 // anchors on its topmost user-visible ancestor (src/subagent.js), so the
 // worker reads the user session's confirmed table. Absent identity (direct
 // server-side calls, tests) returns an empty overlay — the workers then
 // resolve the project-level fallback chain.
+// (covered by tests/spectre.test.mjs — the sessionEnv identity mapping)
 export function sessionEnv(exec, ctx) {
   const sid = effectiveSessionId(ctx, exec?.agent)
   return sid ? { DSH_SESSION_ID: sid } : {}

@@ -74,9 +74,25 @@ scripts/
   snp/       snp_common.py snp_read.py snp_extract.py
 assets/numfallback.py      pure-stdlib numeric fallback for the snp_* scripts
 tests/                     node:test suite + Python worker/PSF/post_check self-tests + fixtures
+                           (see the Test map below)
 ```
 
 Every script filename carries its family prefix; scripts are plain files spawned by the Node channel (no build step, system Python only). Cross-directory imports add `scripts/` to `sys.path` and use `from common.… import …`.
+
+## Test map
+
+Every functional area maps to its test files (file-level; the suites run with bare `node --test` from the repo root):
+
+| Functional area | Tests |
+|---|---|
+| Plugin entry: 7-tool registration, JSON-Schema compilation, family toggles, deferred snp loading/activation/inheritance | `tests/entry.test.mjs` |
+| `spectre_pre_check` engine (format/sweep/value families, check-params chain, session resolution) | `tests/precheck.test.mjs` |
+| `snp_guide` / `snp_read` / `snp_extract` tool faces + numeric suites | `tests/snp.test.mjs` (mounting `tests/snp_common_test.py`, `tests/snp_extract_test.py`) |
+| `gen_vsch_import` / `gen_vsch_export` scheme contracts | `tests/vsch.test.mjs` |
+| `post_check` tool face + collect-all diagnostics | `tests/post.test.mjs` (mounting `tests/post_check_test.py`) |
+| Python self-test mounts (worker, psf parse, netlist checks) + sessionEnv identity | `tests/spectre.test.mjs` (mounting `tests/spectre_worker_test.py`, `tests/psf_parse_test.py`, `tests/spectre_checks_test.py`) |
+| Shipped-script census + family filename prefix convention | `tests/pipeline.test.mjs` |
+| Subagent identity walk + byte-identity mirror guard | `tests/subagent.test.mjs` (the policy file is shared verbatim with the HarnessAMS repo) |
 
 ## Workspace convention
 
@@ -153,7 +169,7 @@ echoes a `port_plan` to confirm. An unphysical result exits 1 with the JSON
 
 ## Validation
 
-- `node --test` from the repo root (tool schema/registration + the bundled skill, script parsing + naming, PSF parsing incl. the two-layer contract and STRUCT flattening, post_check collect-all diagnostics, Spectre worker mechanics with a fake process layer — process-group kill, max-merged timeout extensions, the 30 s progress cadence, and the S-parameter regression suite incl. `tests/snp_common_test.py` for the loader-level robustness contracts and the snp tool-face unknown-key rejection).
+- `node --test` from the repo root; the function-to-test map is the Test map section above.
 - node1 Spectre dual-mode acceptance through the plugin tools, no direct shell or Python (Broadband4 Round1 template, direct + LSF runs, 2/2 success each; recovered point metas and `sp.sp` files differ only in the PSF header `date`, and the numeric CSV rows are identical) — reproducible with `tests/manual/compare_spectre_runs.py <run-a> <run-b>`.
 
 ## What the package ships

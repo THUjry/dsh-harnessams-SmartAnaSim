@@ -14,6 +14,8 @@
 // families are independent pure functions run concurrently — file reads and
 // families both go through Promise.all, so nothing serializes behind a slow
 // sibling. Nothing here executes or writes: checks only.
+// (covered by tests/precheck.test.mjs; the submit-side gate by the
+// HarnessAMS repo's tests/batch.test.mjs)
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
