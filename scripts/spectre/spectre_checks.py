@@ -14,9 +14,11 @@ Checks:
   (1f, 100M, 200u) or plain decimals, never exponent form (2026-11-25 ruling:
   no scale factor may hide in an exponent);
 - subckt/ends counts pair;
-- @@PARAM@@ placeholders live on the ``parameters`` statement ONLY (the sole
-  exemption: @@temperature@@ on a simulatorOptions line); anywhere else is an
-  error — the circuit references parameters by name;
+- @@PARAM@@ placeholders live on the ``parameters`` statement and on
+  ``include`` statements (the path/section text sweeps — dspf extracts, corner
+  sections); @@temperature@@ on a simulatorOptions line stays the other
+  exemption; anywhere else is an error — the circuit references parameters by
+  name;
 - every swept parameter needs its @@P@@ placeholder in the template, and every
   placeholder its config entry (the worker only substitutes config parameters);
   an undeclared @@temperature@@ is a WARNING — the worker fills the default
@@ -30,8 +32,11 @@ Checks:
   (C/R/L-initial names) covers parameters the circuit has not resolved
   precisely, with no expression exemption anymore. ``m``/``M`` follow Spectre
   case sensitivity (m=1e-3, M=1e6);
-- multiplier attributes ``nf``/``m`` (device fingers, instance multiplier)
-  must be positive integers inside the mult ranges;
+- multiplier attributes: ``nf`` (device fingers) must be a positive integer
+  inside the mult range, with a WARNING at or above the nf warning threshold
+  (nf_warn, default 50); ``m`` (instance multiplier) is REJECTED by default —
+  a ``// m-release`` comment on the m= line releases it, then the range gate
+  applies;
 - ``l|w|lr|wr|rl|rw`` swept name values must be u/n-suffixed strings, never
   bare numbers (Spectre reads a bare number as metres); literal bare geometry
   warns;
@@ -39,7 +44,8 @@ Checks:
 
 Workspace defaults (2026-11-25 shape): <workspace>/.harnessams/
 check_params.json — the same file the HarnessAMS task sidebar's check sub-view
-writes — supplies the rcl/mult tables and the unit_check switch when the
+writes — supplies the rcl/mult tables, the nf_warn threshold and the unit_check switch
+when the
 caller does not override them; an absent or corrupted file falls back to the
 built-in constants (fail-open). Legacy bias_check / strict_includes keys are
 ignored on read.
@@ -96,6 +102,14 @@ MULT_RANGES = {
     "nf": tuple(CHECK_PARAMS_DEFAULTS["mult"]["nf"]),
     "m": tuple(CHECK_PARAMS_DEFAULTS["mult"]["m"]),
 }
+# The nf warning threshold (a count at or above it warns). Override via
+# check_netlist_format(nf_warn=...); the same defaults table.
+NF_WARN = CHECK_PARAMS_DEFAULTS["nf_warn"]
+# m-usage probe and the release comment for the default-rejected m policy
+# (mirrors src/precheck.js: the token must sit in a // comment on the SAME
+# line as the m= usage; whole-line comments are dropped before this runs).
+_M_USAGE = re.compile(r"\bm\s*=")
+_M_RELEASE = re.compile(r"//.*\bm-release\b")
 _IDEAL_RCL_RANGE_TEXT = {"r": "0.1..1M ohm", "c": "1f..1u farad", "l": "0.1p..10n henry"}
 _RCL_UNIT = {"r": "ohm", "c": "farad", "l": "henry"}
 _RCL_INSTANCE = re.compile(r"^\s*(\w+)\s*\(([^)]*)\)\s*([A-Za-z_]\w*)\s+(.*)$")
@@ -161,17 +175,24 @@ def _range_text(kind, lo, hi):
     return "%g..%g %s" % (lo, hi, _RCL_UNIT[kind])
 
 
+def _parse_count(value):
+    """Integer count from a numeric or numeric-string value, else None — the
+    value forms a multiplier position accepts."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str) and re.fullmatch(r"[0-9]+", value.strip()):
+        return int(value.strip())
+    return None
+
+
 def _mult_violation(value, lo, hi):
     """Why a multiplier value is bad, or None when it is a count in range."""
-    if isinstance(value, bool):
-        return "is not a positive integer (multipliers are counts)"
-    if isinstance(value, int):
-        num = value
-    elif isinstance(value, float) and value.is_integer():
-        num = int(value)
-    elif isinstance(value, str) and re.fullmatch(r"[0-9]+", value.strip()):
-        num = int(value.strip())
-    else:
+    num = _parse_count(value)
+    if num is None:
         return "is not a positive integer (multipliers are counts)"
     if not lo <= num <= hi:
         return "outside the multiplier range %d..%d" % (lo, hi)
@@ -179,14 +200,15 @@ def _mult_violation(value, lo, hi):
 
 
 def check_netlist_format(text, parameters=None, template_name="template.scs",
-                         rcl_ranges=None, mult_ranges=None):
+                         rcl_ranges=None, mult_ranges=None, nf_warn=None):
     """Return (errors, warnings) for a Spectre netlist template.
 
     parameters: the sweep_config.parameters mapping (optional; when given it is
     used for the placeholder-presence and value checks).
-    rcl_ranges / mult_ranges: explicit overrides for the ideal R/C/L and nf/m
-    ranges (default: the check_params.json tables, falling back to the
-    built-in constants; kind -> (low, high) in the base unit).
+    rcl_ranges / mult_ranges / nf_warn: explicit overrides for the ideal R/C/L
+    ranges, the nf/m ranges and the nf warning threshold (default: the
+    check_params.json tables, falling back to the built-in constants; ranges
+    as kind -> (low, high) in the base unit).
     """
     errors = []
     warnings = []
@@ -222,13 +244,18 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
         errors.append("format: subckt(%d) and ends(%d) counts do not pair" % (n_sub, n_ends))
 
     # @@ placement (2026-11-25 ruling): placeholders live on the parameters
-    # statement; the single exemption is @@temperature@@ on a simulatorOptions
-    # line (spectre does not reliably take a parameter reference there).
+    # statement; two exemptions — @@temperature@@ on a simulatorOptions line
+    # (spectre does not reliably take a parameter reference there) and include
+    # statements, whose path/section text sweeps (the worker substitutes
+    # text-wide, so the placeholder resolves there exactly like a
+    # parameters-line one).
     for n, s in code:
         if "@@" not in s:
             continue
         names = _PLACEHOLDER.findall(s)
         if re.match(r"^parameters\b", s, re.I):
+            continue
+        if re.match(r"^include\b", s, re.I):
             continue
         if _SIMOPTS_STMT.match(s):
             bad = [x for x in names if x != "temperature"]
@@ -245,8 +272,14 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
     # worker only substitutes config parameters; anything else reaches spectre
     # as literal text).
     used = set()
+    # Include-line placeholders resolve through the same text-wide substitution
+    # (the swept string lands in the include path or the section= value).
+    include_used = set()
     for _, s in code:
-        used.update(_PLACEHOLDER.findall(s))
+        names = _PLACEHOLDER.findall(s)
+        used.update(names)
+        if re.match(r"^include\b", s, re.I):
+            include_used.update(names)
     if parameters is not None:
         declared = set(parameters.keys())
         # Temperature is the one placeholder that may stay undeclared: the
@@ -264,7 +297,11 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
         if absent:
             errors.append("params: swept parameters without a @@P@@ placeholder in "
                           "the template: %s — the sweep cannot vary them" % ", ".join(absent))
-        if declared and not any(re.match(r"^parameters\b", s, re.I) for _, s in code):
+        # A sweep that only varies include text needs no parameters statement:
+        # include-line placeholders take effect through substitution, so the
+        # no-statement note fires only for parameters nothing else covers.
+        if (declared and not any(re.match(r"^parameters\b", s, re.I) for _, s in code)
+                and any(name not in include_used for name in declared)):
             warnings.append("format: no 'parameters' statement found although the sweep "
                             "declares parameters")
         circuit = "\n".join(s for _, s in code if not re.match(r"^parameters\b", s, re.I))
@@ -302,6 +339,25 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
 
     ranges = rcl_ranges if rcl_ranges is not None else (cfg.get("rcl") or IDEAL_RCL_RANGES)
     mults = mult_ranges if mult_ranges is not None else (cfg.get("mult") or MULT_RANGES)
+    warn_nf = nf_warn if nf_warn is not None else cfg.get("nf_warn", NF_WARN)
+
+    # m is rejected by default: any m= usage — instance line, parameters
+    # statement, literal / name / expression — errors unless that same line
+    # carries a // m-release comment. Writing m= without an error is not
+    # results scaling by m: only primitives and subckt instances scale,
+    # Verilog-A/CMI models ignore the reserved name, and sources/tline leave
+    # it meaningless — hence the explicit per-line release. The range gates
+    # below still run on released lines.
+    for n, s in code:
+        if not _M_USAGE.search(s):
+            continue
+        if _M_RELEASE.search(s):
+            continue
+        errors.append("mult: line %d uses m= — the instance multiplier is rejected by "
+                      "default (only primitives and subckt instances scale; Verilog-A/CMI "
+                      "models ignore it); verify the semantics and add a // m-release "
+                      "comment on that line (the %d..%d range gate then applies)"
+                      % (n, mults["m"][0], mults["m"][1]))
 
     for n, s in code:
         if re.match(r"^parameters\b", s, re.I):
@@ -383,6 +439,11 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                 if not lo <= int(token) <= hi:
                     errors.append("mult: %s %s=%s outside the multiplier range %d..%d"
                                   % (im.group(1), attr, token, lo, hi))
+                if attr == "nf" and int(token) >= warn_nf:
+                    warnings.append("mult: %s nf=%s is at or above the nf warning threshold "
+                                    "%d — large finger counts are unusual; verify the device "
+                                    "(threshold: check_params nf_warn)"
+                                    % (im.group(1), token, warn_nf))
                 continue
             if re.fullmatch(r"[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?", token):
                 errors.append("mult: %s %s=%s is not a positive integer (multipliers are "
@@ -398,6 +459,14 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                     bad = _mult_violation(value, lo, hi)
                     if bad:
                         errors.append("mult: %s=%s value %r %s" % (attr, token, value, bad))
+                    if attr == "nf":
+                        count = _parse_count(value)
+                        if count is not None and count >= warn_nf:
+                            warnings.append("mult: nf=%s value %r is at or above the nf "
+                                            "warning threshold %d — large finger counts are "
+                                            "unusual; verify the device (threshold: "
+                                            "check_params nf_warn)"
+                                            % (token, value, warn_nf))
 
     if parameters is not None:
         # exact-name config parameters nf / m
@@ -410,6 +479,13 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                 bad = _mult_violation(value, lo, hi)
                 if bad:
                     errors.append("mult: swept parameter %s value %r %s" % (attr, value, bad))
+                if attr == "nf":
+                    count = _parse_count(value)
+                    if count is not None and count >= warn_nf:
+                        warnings.append("mult: swept parameter nf value %r is at or above "
+                                        "the nf warning threshold %d — large finger counts "
+                                        "are unusual; verify the device (threshold: "
+                                        "check_params nf_warn)" % (value, warn_nf))
         # prefix heuristic (the "find the C-prefixed parameter and check it as
         # a capacitor" net): applies to parameters the netlist has NOT resolved
         # precisely at a bare-name R/C/L value (those skip to avoid duplicate

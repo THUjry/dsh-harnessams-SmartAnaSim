@@ -2,11 +2,14 @@
 // workflow hand-writes the run directory (template*.scs + sweep_config.json);
 // this module is the gate that keeps those netlists honest without any python
 // on the tool path: language format (lang declaration, SPICE-directive
-// rejection, LF/ASCII hygiene, @@P@@ placement, no scientific notation — SI
-// suffixes only), sweep-parameter presence (an undeclared @@temperature@@ is a
+// rejection, LF/ASCII hygiene, @@P@@ placement — parameters statement plus
+// include statements whose path/section text sweeps, no scientific notation —
+// SI suffixes only), sweep-parameter presence (an undeclared @@temperature@@ is a
 // warning: the worker fills the default 27 degC), and the value gates (ideal
 // R/C/L ranges on literals and parameter names — expressions at R/C/L value
-// positions are rejected, nf/m multiplier ranges, geometry unit suffixes).
+// positions are rejected, the nf range with its warning threshold, m rejected
+// by default with a same-line // m-release comment as the release, geometry
+// unit suffixes).
 // check parameters resolve through the same chain the retired
 // python assembly layer used: built-in defaults <- <workspace>/.harnessams/
 // check_params.json <- the calling session's confirmed table in sessions.json
@@ -25,6 +28,7 @@ import path from 'node:path'
 export const DEFAULT_CHECK_PARAMS = {
   rcl: { r: [0.1, 1e6], c: [1e-15, 1e-6], l: [1e-13, 1e-8] },
   mult: { nf: [1, 128], m: [1, 1000] },
+  nf_warn: 50,
   unit_check: true,
 }
 
@@ -46,6 +50,7 @@ function freshDefaults() {
   return {
     rcl: { r: [...DEFAULT_CHECK_PARAMS.rcl.r], c: [...DEFAULT_CHECK_PARAMS.rcl.c], l: [...DEFAULT_CHECK_PARAMS.rcl.l] },
     mult: { nf: [...DEFAULT_CHECK_PARAMS.mult.nf], m: [...DEFAULT_CHECK_PARAMS.mult.m] },
+    nf_warn: DEFAULT_CHECK_PARAMS.nf_warn,
     unit_check: DEFAULT_CHECK_PARAMS.unit_check,
   }
 }
@@ -77,6 +82,7 @@ function applyLayer(params, raw) {
       if (p) params.mult[k] = p
     }
   }
+  if (Number.isInteger(raw.nf_warn) && raw.nf_warn > 0) params.nf_warn = raw.nf_warn
   if (typeof raw.unit_check === 'boolean') params.unit_check = raw.unit_check
 }
 
@@ -138,6 +144,13 @@ const RCL_ATTR_VALUE = /\b([rcl])\s*=\s*(\S+)/g
 const LITERAL_LENGTH = /\b(l|w|lr|wr|rl|rw)\s*=\s*([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)(?![0-9a-zA-Z_.])/i
 const GEOM_NAME_REF = /\b(l|w|lr|wr|rl|rw)\s*=\s*([A-Za-z_]\w*)\b/gi
 const MULT_ATTR_RE = { nf: /\bnf\s*=\s*(\S+)/g, m: /\bm\s*=\s*(\S+)/g }
+// m-usage probe and the release comment for the default-rejected m policy.
+// M_USAGE is stateless (a /g regex would carry lastIndex across .test calls);
+// M_RELEASE matches the token inside a // comment on the SAME line as the m=
+// usage — analyzeLines drops whole-line comments, so a standalone // m-release
+// line never releases anything.
+const M_USAGE = /\bm\s*=/
+const M_RELEASE = /\/\/.*\bm-release\b/
 // Scientific notation anywhere on a code line (comments already stripped):
 // number-shaped only — the lookbehind keeps identifier tails (a net named
 // 'n1e5') out of the match, so '1e-15', '2.5e-4' and '1e+03' all flag.
@@ -173,17 +186,18 @@ export function idealNumber(value) {
   return null
 }
 
+// Integer count from a numeric or numeric-string value, else null — the value
+// forms a multiplier position accepts.
+function parseCount(value) {
+  if (typeof value === 'number') return Number.isInteger(value) ? value : null
+  if (typeof value === 'string' && /^[0-9]+$/.test(value.trim())) return Number(value.trim())
+  return null
+}
+
 // A positive integer within [lo, hi]; integer strings ('8') count.
 function multViolation(value, lo, hi) {
-  let n
-  if (typeof value === 'number') {
-    if (!Number.isInteger(value)) return 'is not a positive integer (multipliers are counts)'
-    n = value
-  } else if (typeof value === 'string' && /^[0-9]+$/.test(value.trim())) {
-    n = Number(value.trim())
-  } else {
-    return 'is not a positive integer (multipliers are counts)'
-  }
+  const n = parseCount(value)
+  if (n === null) return 'is not a positive integer (multipliers are counts)'
   if (n < lo || n > hi) return `outside the multiplier range ${lo}..${hi}`
   return null
 }
@@ -261,15 +275,19 @@ function checkLanguage(text, raw, code, templateName) {
   const nEnds = code.filter((l) => /^ends\b/i.test(l.s)).length
   if (nSub !== nEnds) errors.push(`format: subckt(${nSub}) and ends(${nEnds}) counts do not pair`)
   // @@ placement (2026-11-25 ruling): placeholders live on the parameters
-  // statement only; the single exemption is @@temperature@@ on a
-  // simulatorOptions line (the shipped sky130 templates sweep it there —
-  // spectre does not reliably take a parameter reference in simulatorOptions).
-  // Anywhere else — device lines, subckt bodies, analysis statements, comments
-  // already stripped — the circuit must reference parameters by name.
+  // statement; two exemptions — @@temperature@@ on a simulatorOptions line
+  // (the shipped sky130 templates sweep it there — spectre does not reliably
+  // take a parameter reference in simulatorOptions) and include statements,
+  // whose path/section text sweeps (dspf extracts, corner sections: the
+  // worker substitutes text-wide, so the placeholder resolves there exactly
+  // like a parameters-line one). Anywhere else — device lines, subckt bodies,
+  // analysis statements, comments already stripped — the circuit must
+  // reference parameters by name.
   for (const l of code) {
     if (!l.s.includes('@@')) continue
     const names = [...l.s.matchAll(PLACEHOLDER)].map((m) => m[1])
     if (/^parameters\b/i.test(l.s)) continue
+    if (/^include\b/i.test(l.s)) continue
     if (/^simulatorOptions\b/i.test(l.s)) {
       const bad = names.filter((nm) => nm !== 'temperature')
       if (bad.length) errors.push(`format: @@${bad[0]}@@ outside the parameters statement (line ${l.n}) — only @@temperature@@ is allowed on a simulatorOptions line`)
@@ -290,7 +308,13 @@ function checkSweepParams(code, config) {
   const warnings = []
   const parameters = config && typeof config.parameters === 'object' && config.parameters ? config.parameters : null
   const used = new Set()
-  for (const l of code) for (const m of l.s.matchAll(PLACEHOLDER)) used.add(m[1])
+  // Include-line placeholders resolve through the same text-wide substitution
+  // (the swept string lands in the include path or the section= value).
+  const includeUsed = new Set()
+  for (const l of code) for (const m of l.s.matchAll(PLACEHOLDER)) {
+    used.add(m[1])
+    if (/^include\b/i.test(l.s)) includeUsed.add(m[1])
+  }
   if (parameters) {
     const declared = new Set(Object.keys(parameters))
     // Temperature is the one placeholder that may stay undeclared: the sweep
@@ -306,7 +330,11 @@ function checkSweepParams(code, config) {
     if (absent.length) {
       errors.push(`params: swept parameters without a @@P@@ placeholder in the template: ${absent.join(', ')} — the sweep cannot vary them`)
     }
-    if (declared.size && !code.some((l) => /^parameters\b/i.test(l.s))) {
+    // A sweep that only varies include text needs no parameters statement:
+    // include-line placeholders take effect through substitution, so the
+    // no-statement note fires only for parameters nothing else covers.
+    if (declared.size && !code.some((l) => /^parameters\b/i.test(l.s))
+      && [...declared].some((n) => !includeUsed.has(n))) {
       warnings.push("format: no 'parameters' statement found although the sweep declares parameters")
     }
     const circuit = code.filter((l) => !/^parameters\b/i.test(l.s)).map((l) => l.s).join('\n')
@@ -329,6 +357,9 @@ function checkValues(code, config, params) {
   const parameters = config && typeof config.parameters === 'object' && config.parameters ? config.parameters : null
   const templateParams = parseTemplateParams(code)
   const unitCheck = params.unit_check !== false
+  const nfWarn = params.nf_warn
+  const nfWarnMsg = (subject) =>
+    `mult: ${subject} is at or above the nf warning threshold ${nfWarn} — large finger counts are unusual; verify the device (threshold: check_params nf_warn)`
   // Names already checked precisely at an ideal-RCL value position — the
   // prefix heuristic below skips them to avoid duplicate findings.
   const resolvedNames = new Set()
@@ -339,6 +370,19 @@ function checkValues(code, config, params) {
   // Config names whose values were already checked at an nf/m value position —
   // the exact-name config pass below skips them to avoid duplicate findings.
   const multChecked = new Set()
+
+  // m is rejected by default: any m= usage — instance line, parameters
+  // statement, literal / name / expression — errors unless that same line
+  // carries a // m-release comment. Writing m= without an error is not
+  // results scaling by m: only primitives and subckt instances scale,
+  // Verilog-A/CMI models ignore the reserved name, and sources/tline leave it
+  // meaningless — hence the explicit per-line release. The range gates below
+  // still run on released lines.
+  for (const l of code) {
+    if (!M_USAGE.test(l.s)) continue
+    if (M_RELEASE.test(l.s)) continue
+    errors.push(`mult: line ${l.n} uses m= — the instance multiplier is rejected by default (only primitives and subckt instances scale; Verilog-A/CMI models ignore it); verify the semantics and add a // m-release comment on that line (the ${params.mult.m[0]}..${params.mult.m[1]} range gate then applies)`)
+  }
 
   for (const l of code) {
     if (/^parameters\b/i.test(l.s)) continue
@@ -411,6 +455,7 @@ function checkValues(code, config, params) {
         if (/^[0-9]+$/.test(token)) {
           const n = Number(token)
           if (n < lo || n > hi) errors.push(`mult: ${im[1]} ${attr}=${token} outside the multiplier range ${lo}..${hi}`)
+          if (attr === 'nf' && n >= nfWarn) warnings.push(nfWarnMsg(`${im[1]} nf=${token}`))
           continue
         }
         if (/^[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?$/.test(token)) {
@@ -426,6 +471,8 @@ function checkValues(code, config, params) {
           for (const v of valuesFor(token, parameters, templateParams[token])) {
             const bad = multViolation(v, lo, hi)
             if (bad) errors.push(`mult: ${attr}=${token} value ${JSON.stringify(v)} ${bad}`)
+            const n = attr === 'nf' ? parseCount(v) : null
+            if (n !== null && n >= nfWarn) warnings.push(nfWarnMsg(`nf=${token} value ${JSON.stringify(v)}`))
           }
         }
         // anything else (expressions like m=(2*SW)) is skipped: unknown scale
@@ -442,6 +489,8 @@ function checkValues(code, config, params) {
       for (const v of (Array.isArray(vals) ? vals : [vals])) {
         const bad = multViolation(v, lo, hi)
         if (bad) errors.push(`mult: swept parameter ${attr} value ${JSON.stringify(v)} ${bad}`)
+        const n = attr === 'nf' ? parseCount(v) : null
+        if (n !== null && n >= nfWarn) warnings.push(nfWarnMsg(`swept parameter nf value ${JSON.stringify(v)}`))
       }
     }
     // prefix heuristic (the user-facing "find the C-prefixed parameter and

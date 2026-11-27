@@ -1,10 +1,12 @@
-// spectre_pre_check engine tests: the @@ placement contract (parameters-
-// statement-only, @@temperature@@ exemption on simulatorOptions), the
-// no-scientific-notation rule, sweep-parameter presence (undeclared
-// @@temperature@@ = warning + worker default 27), ideal RCL / multiplier value
-// gates (expressions rejected at RCL positions, zero = legal degenerate),
-// geometry unit rules, and the check-parameter chain (builtin <- project <-
-// session, fail-open per key).
+// spectre_pre_check engine tests: the @@ placement contract (parameters
+// statement, @@temperature@@ exemption on simulatorOptions, include
+// statements for path/section sweeps), the no-scientific-notation rule,
+// sweep-parameter presence (undeclared @@temperature@@ = warning + worker
+// default 27), ideal RCL / multiplier value gates (expressions rejected at RCL
+// positions, zero = legal degenerate, the nf warning threshold, the
+// default-rejected m with its same-line // m-release comment), geometry unit
+// rules, and the check-parameter chain (builtin <- project <- session,
+// fail-open per key).
 import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -64,7 +66,7 @@ test('the shipped sky130 template shape passes clean', async () => {
   assert.equal(r.ok, true, JSON.stringify(r))
 })
 
-test('@@ placement: parameters statement only, @@temperature@@ exempt on simulatorOptions', async () => {
+test('@@ placement: parameters statement, @@temperature@@ exempt on simulatorOptions', async () => {
   const badCircuit = makeRun(
     'simulator lang=spectre\nparameters SW=@@SW@@\nR1 (a b) resistor r=@@SW@@\n',
     { parameters: { SW: [0, 1] } })
@@ -192,18 +194,127 @@ test('multiplier gates: literals, name references, config exact names, expressio
     'simulator lang=spectre\nM1 (d g s b) nmos l=0.15u w=1u nf=200\n', { parameters: {} }), null))
     .errors.some((e) => e.startsWith('mult:')))
   assert.equal((await runPreCheck(makeRun(
-    'simulator lang=spectre\nR1 (a b) resistor r=1k m=4\n', { parameters: {} }), null)).ok, true)
+    'simulator lang=spectre\nR1 (a b) resistor r=1k m=4 // m-release\n', { parameters: {} }), null)).ok, true)
   assert.ok((await runPreCheck(makeRun(
-    'simulator lang=spectre\nR1 (a b) resistor r=1k m=4000\n', { parameters: {} }), null))
+    'simulator lang=spectre\nR1 (a b) resistor r=1k m=4000 // m-release\n', { parameters: {} }), null))
     .errors.some((e) => e.startsWith('mult:')))
 
   const cfg = await runPreCheck(makeRun(
-    'simulator lang=spectre\nparameters m=@@m@@\nR1 (a b) resistor r=1k m=m\n',
+    'simulator lang=spectre\nparameters m=@@m@@ // m-release\nR1 (a b) resistor r=1k m=m // m-release\n',
     { parameters: { m: [5000] } }), null)
   assert.ok(cfg.errors.some((e) => e.startsWith('mult:')), cfg.errors)
 
   assert.equal((await runPreCheck(makeRun(
-    'simulator lang=spectre\nparameters k=2\nR1 (a b) resistor r=1k m=(2*k)\n', { parameters: {} }), null)).ok, true)
+    'simulator lang=spectre\nparameters k=2\nR1 (a b) resistor r=1k m=(2*k) // m-release\n', { parameters: {} }), null)).ok, true)
+})
+
+test('include statements may carry @@ placeholders: path and section sweeps', async () => {
+  // the swept string lands in the include path or the section= value — an
+  // include-only sweep is a complete, warning-free run
+  const pathSweep = await runPreCheck(makeRun(
+    'simulator lang=spectre\ninclude "corner_@@corner@@.scs"\n',
+    { parameters: { corner: ['tt', 'ss'] } }), null)
+  assert.equal(pathSweep.ok, true, JSON.stringify(pathSweep))
+  assert.deepEqual(pathSweep.warnings, [], pathSweep.warnings)
+
+  const sectionSweep = await runPreCheck(makeRun(
+    'simulator lang=spectre\ninclude "sky130.scs" section=@@sec@@\n',
+    { parameters: { sec: ['tt', 'ff'] } }), null)
+  assert.equal(sectionSweep.ok, true, JSON.stringify(sectionSweep))
+  assert.deepEqual(sectionSweep.warnings, [], sectionSweep.warnings)
+
+  // a declared parameter nothing covers keeps both findings: the missing
+  // placeholder error AND the no-parameters-statement note
+  const uncovered = await runPreCheck(makeRun(
+    'simulator lang=spectre\ninclude "sky130.scs"\n',
+    { parameters: { SW: [0, 1] } }), null)
+  assert.ok(uncovered.errors.some((e) => e.includes('without a @@P@@ placeholder') && e.includes('SW')), uncovered.errors)
+  assert.ok(uncovered.warnings.some((w) => w.includes("no 'parameters' statement")), uncovered.warnings)
+
+  // placement still rejects @@ on device and analysis lines
+  const badCircuit = await runPreCheck(makeRun(
+    'simulator lang=spectre\nparameters SW=@@SW@@\nR1 (a b) resistor r=@@SW@@\n',
+    { parameters: { SW: [0, 1] } }), null)
+  assert.ok(badCircuit.errors.some((e) => e.includes('outside the parameters statement')), badCircuit.errors)
+})
+
+test('nf warning threshold: warns at or above nf_warn, errors above the range', async () => {
+  // a literal at the default threshold warns, never fails
+  const literal = await runPreCheck(makeRun(
+    'simulator lang=spectre\nM1 (d g s b) nmos l=0.15u w=1u nf=50\n', { parameters: {} }), null)
+  assert.equal(literal.ok, true, JSON.stringify(literal))
+  assert.ok(literal.warnings.some((w) => w.startsWith('mult:') && w.includes('nf=50') && w.includes('warning threshold 50')), literal.warnings)
+
+  // below the threshold: silent
+  const low = await runPreCheck(makeRun(
+    'simulator lang=spectre\nM1 (d g s b) nmos l=0.15u w=1u nf=31\n', { parameters: {} }), null)
+  assert.deepEqual(low.warnings, [], low.warnings)
+
+  // above the range stays an error
+  const over = await runPreCheck(makeRun(
+    'simulator lang=spectre\nM1 (d g s b) nmos l=0.15u w=1u nf=200\n', { parameters: {} }), null)
+  assert.ok(over.errors.some((e) => e.startsWith('mult:') && e.includes('nf=200')), over.errors)
+
+  // a swept name and a config exact-name entry both warn on their values
+  const name = await runPreCheck(makeRun(
+    'simulator lang=spectre\nparameters nf=@@nf@@\nM1 (d g s b) nmos l=0.15u w=1u nf=nf\n',
+    { parameters: { nf: [64] } }), null)
+  assert.ok(name.warnings.some((w) => w.startsWith('mult:') && w.includes('64')), name.warnings)
+  const exact = await runPreCheck(makeRun(
+    'simulator lang=spectre\nM1 (d g s b) nmos l=0.15u w=1u\n',
+    { parameters: { nf: [64] } }), null)
+  assert.ok(exact.warnings.some((w) => w.startsWith('mult:') && w.includes('64')), exact.warnings)
+
+  // the threshold follows the check-parameter chain: a project nf_warn of 80
+  // silences nf=64
+  const ws = mkdtempSync(path.join(tmpdir(), 'hams-nfwarn-'))
+  mkdirSync(path.join(ws, '.harnessams'))
+  writeFileSync(path.join(ws, '.harnessams', 'check_params.json'), JSON.stringify({ nf_warn: 80 }))
+  const runDir = path.join(ws, 'run')
+  mkdirSync(runDir)
+  writeFileSync(path.join(runDir, 'template.scs'), 'simulator lang=spectre\nM1 (d g s b) nmos l=0.15u w=1u nf=64\n')
+  writeFileSync(path.join(runDir, 'sweep_config.json'), JSON.stringify({ parameters: {} }))
+  const raised = await runPreCheck(runDir, null)
+  assert.equal(raised.params_source, 'project')
+  assert.deepEqual(raised.warnings, [], raised.warnings)
+})
+
+test('m is rejected by default; a same-line // m-release comment releases it', async () => {
+  // any m= — m=1 included — errors without the release, and the message
+  // teaches the release idiom
+  const plain = await runPreCheck(makeRun(
+    'simulator lang=spectre\nR1 (a b) resistor r=1k m=1\n', { parameters: {} }), null)
+  assert.equal(plain.ok, false)
+  assert.ok(plain.errors.some((e) => e.startsWith('mult:') && e.includes('m-release')), plain.errors)
+
+  // the release must sit on the m= line itself — a standalone comment line
+  // releases nothing
+  const standalone = await runPreCheck(makeRun(
+    '// m-release\nsimulator lang=spectre\nR1 (a b) resistor r=1k m=2\n', { parameters: {} }), null)
+  assert.ok(standalone.errors.some((e) => e.startsWith('mult:') && e.includes('m-release')), standalone.errors)
+
+  // same-line release passes; the range gate still applies beyond it
+  const released = await runPreCheck(makeRun(
+    'simulator lang=spectre\nR1 (a b) resistor r=1k m=4 // m-release\n', { parameters: {} }), null)
+  assert.equal(released.ok, true, JSON.stringify(released))
+  const outOfRange = await runPreCheck(makeRun(
+    'simulator lang=spectre\nR1 (a b) resistor r=1k m=4000 // m-release\n', { parameters: {} }), null)
+  assert.ok(outOfRange.errors.some((e) => e.startsWith('mult:') && e.includes('4000')), outOfRange.errors)
+
+  // two m= lines, one released: exactly the unreleased line errors
+  const mixed = await runPreCheck(makeRun(
+    'simulator lang=spectre\nR1 (a b) resistor r=1k m=4 // m-release\nR2 (a b) resistor r=2k m=2\n',
+    { parameters: {} }), null)
+  assert.equal(mixed.errors.filter((e) => e.startsWith('mult:')).length, 1, mixed.errors)
+  assert.ok(mixed.errors.some((e) => e.includes('line 3')), mixed.errors)
+
+  // a parameters-statement m and an expression m both count as usage
+  const declared = await runPreCheck(makeRun(
+    'simulator lang=spectre\nparameters m=2\nR1 (a b) resistor r=1k\n', { parameters: {} }), null)
+  assert.ok(declared.errors.some((e) => e.startsWith('mult:')), declared.errors)
+  const expr = await runPreCheck(makeRun(
+    'simulator lang=spectre\nparameters k=2\nR1 (a b) resistor r=1k m=(2*k)\n', { parameters: {} }), null)
+  assert.ok(expr.errors.some((e) => e.startsWith('mult:') && e.includes('m-release')), expr.errors)
 })
 
 test('prefix heuristic: C-initial config values, expressions rejected, no duplicates', async () => {
@@ -325,12 +436,12 @@ test('check-parameter chain: builtin <- project <- session, fail-open', () => {
   // the same file with utf-8-sig, so the JS chain must adopt it too
   writeFileSync(path.join(ws, '.harnessams', 'check_params.json'),
     '\uFEFF' + JSON.stringify({
-      rcl: { c: [1e-15, 1e-9] }, mult: { nf: [1, 8] }, unit_check: false,
+      rcl: { c: [1e-15, 1e-9] }, mult: { nf: [1, 8] }, nf_warn: 8, unit_check: false,
     }))
   writeFileSync(path.join(ws, '.harnessams', 'sessions.json'), JSON.stringify({
     version: 2,
     sessions: {
-      sessA: { check_params: { mult: { nf: [1, 64] } } },
+      sessA: { check_params: { mult: { nf: [1, 64] }, nf_warn: 64 } },
       sessB: { check_params: { rcl: { c: [1e-15, 1e-6] } } },
     },
   }))
@@ -343,27 +454,32 @@ test('check-parameter chain: builtin <- project <- session, fail-open', () => {
   assert.equal(builtin.source, 'builtin')
   assert.deepEqual(builtin.params.rcl.c, [1e-15, 1e-6])
   assert.deepEqual(builtin.params.mult.nf, [1, 128])
+  assert.equal(builtin.params.nf_warn, 50)
 
   const project = readCheckParamsChain(run1, 'no-such-session')
   assert.equal(project.source, 'project', 'the BOM must not read as a corrupt file')
   assert.deepEqual(project.params.rcl.c, [1e-15, 1e-9])
   assert.deepEqual(project.params.mult.nf, [1, 8])
+  assert.equal(project.params.nf_warn, 8)
   assert.equal(project.params.unit_check, false)
 
   const sessA = readCheckParamsChain(run1, 'sessA')
   assert.equal(sessA.source, 'session')
   assert.deepEqual(sessA.params.mult.nf, [1, 64]) // session override
   assert.deepEqual(sessA.params.rcl.c, [1e-15, 1e-9]) // project layer holds
+  assert.equal(sessA.params.nf_warn, 64) // session override
 
   const sessB = readCheckParamsChain(run1, 'sessB')
   assert.deepEqual(sessB.params.rcl.c, [1e-15, 1e-6]) // session c back to default
   assert.deepEqual(sessB.params.mult.nf, [1, 8]) // project layer holds
+  assert.equal(sessB.params.nf_warn, 8) // no session key: project layer holds
 
   // corrupt files fail open to the layer below
   writeFileSync(path.join(ws, '.harnessams', 'check_params.json'), '{not json')
   const corrupt = readCheckParamsChain(run1, 'sessA')
   assert.equal(corrupt.source, 'session')
   assert.deepEqual(corrupt.params.rcl.c, [1e-15, 1e-6]) // default c back
+  assert.equal(corrupt.params.nf_warn, 64) // session layer holds
 })
 
 test('the chain drives the gates: same netlist, different effective ranges', async () => {

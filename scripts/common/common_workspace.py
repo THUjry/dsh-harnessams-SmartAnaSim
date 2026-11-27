@@ -43,7 +43,8 @@ def write_errlog(work_dir, message):
 # Shape contract shared with the top-level plugin (HarnessAMS
 # src/server/checkparams.js) and the pre-check engine (SmartAnaSim
 # src/precheck.js): {"rcl": {"r": [lo, hi], "c": [...], "l": [...]},
-# "mult": {"nf": [lo, hi], "m": [...]}, "unit_check": bool}. The task
+# "mult": {"nf": [lo, hi], "m": [...]}, "nf_warn": int, "unit_check": bool}.
+# The task
 # sidebar's check sub-view writes it under <workspace>/.harnessams/; the check
 # faces (spectre_pre_check tool, spectre_checks.py) read it as their default
 # source of bounds/switches. Legacy bias_check / strict_includes keys are
@@ -51,6 +52,7 @@ def write_errlog(work_dir, message):
 CHECK_PARAMS_DEFAULTS = {
     "rcl": {"r": (0.1, 1e6), "c": (1e-15, 1e-6), "l": (1e-13, 1e-8)},
     "mult": {"nf": (1, 128), "m": (1, 1000)},
+    "nf_warn": 50,
     "unit_check": True,
 }
 
@@ -77,11 +79,21 @@ def _valid_mult_pair(value):
     return None
 
 
+def _valid_nf_warn(value):
+    """The nf warning threshold: a positive integer (integral floats match the
+    JS engine's Number.isInteger acceptance)."""
+    if (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and float(value).is_integer() and value > 0):
+        return int(value)
+    return None
+
+
 def default_check_params():
     """A fresh copy of the built-in defaults (rcl/mult pairs as tuples)."""
     return {
         "rcl": dict(CHECK_PARAMS_DEFAULTS["rcl"]),
         "mult": dict(CHECK_PARAMS_DEFAULTS["mult"]),
+        "nf_warn": CHECK_PARAMS_DEFAULTS["nf_warn"],
         "unit_check": CHECK_PARAMS_DEFAULTS["unit_check"],
     }
 
@@ -103,6 +115,9 @@ def _merge_check_layer(params, raw):
             pair = _valid_mult_pair(raw_mult.get(kind))
             if pair:
                 params["mult"][kind] = pair
+    nf_warn = _valid_nf_warn(raw.get("nf_warn"))
+    if nf_warn is not None:
+        params["nf_warn"] = nf_warn
     if isinstance(raw.get("unit_check"), bool):
         params["unit_check"] = raw["unit_check"]
 
@@ -133,7 +148,7 @@ def _apply_session_params(sessions_path, session_id, params):
     if cached is not None:
         return cached
     out = {"rcl": dict(params["rcl"]), "mult": dict(params["mult"]),
-           "unit_check": params["unit_check"]}
+           "nf_warn": params["nf_warn"], "unit_check": params["unit_check"]}
     try:
         with open(sessions_path, encoding="utf-8-sig") as f:
             raw = json.load(f)

@@ -2,11 +2,13 @@
 """Python-only coverage of the legacy gen-path companion library
 (scripts/spectre/spectre_checks.py): the kwargs range overrides, the
 chdir-based workspace config discovery, the DSH_SESSION_ID session layer,
-the template*.scs naming family, and one clean-run smoke over the full GOOD
-netlist. The shared netlist contract surface (language format, sweep
-presence, RCL/mult value gates, geometry suffixes) is owned by the JS
-engine's tests (tests/precheck.test.mjs) — the tool path never spawns this
-library, so the mirrored cases are not duplicated here.
+the template*.scs naming family, the nf_warn threshold plumbing, and one
+clean-run smoke over the full GOOD netlist. The shared netlist contract
+surface (language format, sweep presence, RCL/mult value gates, geometry
+suffixes) is owned by the JS engine's tests (tests/precheck.test.mjs) — the
+tool path never spawns this library, so the mirrored cases are not duplicated
+here (the m policy / include exemption guards below pin the python-local
+regexes against drift, not the contract).
 Run as a plain script; invoked by tests/spectre.test.mjs.
 
 Usage: python -B tests/spectre_checks_test.py
@@ -143,6 +145,14 @@ def test_check_params_config():
             "simulator lang=spectre\nM1 (d g s b) nmos l=0.15u w=1u nf=2000\n")
             if e.startswith("mult:")]
         assert len(errs) == 1 and "1..300" in errs[0], errs
+
+        # 6. nf_warn from the config: a raised threshold silences nf=64; an
+        #    off-spec value falls back to the built-in default
+        enter("ws_nfwarn", params={"nf_warn": 80})
+        t_nf64 = "simulator lang=spectre\nM1 (d g s b) nmos l=0.15u w=1u nf=64\n"
+        assert warnings_of(t_nf64) == [], warnings_of(t_nf64)
+        enter("ws_nfwarn_bad", params={"nf_warn": 0})
+        assert any(w.startswith("mult:") for w in warnings_of(t_nf64)), warnings_of(t_nf64)
     finally:
         os.chdir(base)
         common_workspace._check_params_cache.clear()
@@ -236,6 +246,28 @@ def test_check_params_session_layer():
         shutil.rmtree(scenarios, ignore_errors=True)
 
 
+def test_m_policy_include_exemption_nf_warn_mirrors():
+    """Mirror guards for the python-local policy code: the m default-reject
+    with its same-line // m-release release, the include-line @@ exemption,
+    and the nf_warn kwarg override (the shared contract is owned by
+    tests/precheck.test.mjs — these pin this library's own implementation)."""
+    # m rejected by default; the release must ride the m= line itself
+    t = "simulator lang=spectre\nR1 (a b) resistor r=1k m=2\n"
+    assert any(e.startswith("mult:") and "m-release" in e for e in errors_of(t)), errors_of(t)
+    t_rel = "simulator lang=spectre\nR1 (a b) resistor r=1k m=2 // m-release\n"
+    assert errors_of(t_rel) == [], errors_of(t_rel)
+    t_standalone = "// m-release\nsimulator lang=spectre\nR1 (a b) resistor r=1k m=2\n"
+    assert any(e.startswith("mult:") for e in errors_of(t_standalone)), errors_of(t_standalone)
+    # include statements carry @@ without a placement error, and an
+    # include-only sweep is a clean run
+    t_inc = 'simulator lang=spectre\ninclude "corner_@@corner@@.scs"\n'
+    assert check_netlist_format(t_inc, parameters={"corner": ["tt"]}) == ([], [])
+    # the nf warning threshold: the default warns, the kwarg overrides it
+    t_nf = "simulator lang=spectre\nM1 (d g s b) nmos l=0.15u w=1u nf=64\n"
+    assert any(w.startswith("mult:") and "64" in w for w in warnings_of(t_nf)), warnings_of(t_nf)
+    assert warnings_of(t_nf, nf_warn=80) == [], warnings_of(t_nf, nf_warn=80)
+
+
 def test_template_naming_family():
     """template*.scs family names pass silently.
 
@@ -267,6 +299,7 @@ def main():
         test_non_rcl_instances_untouched()
         test_check_params_config()
         test_check_params_session_layer()
+        test_m_policy_include_exemption_nf_warn_mirrors()
         test_template_naming_family()
     finally:
         os.chdir(old_cwd)

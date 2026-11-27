@@ -2,12 +2,14 @@
 // hand-writes the run directory (template*.scs + sweep_config.json — see the
 // bundled smart-spectre skill for the contract); this tool is the validator
 // for one: language format (simulator lang=spectre, no SPICE directives,
-// LF/ASCII, @@P@@ placeholders only on the parameters statement, no
-// scientific notation — SI suffixes only), sweep-parameter presence (an
-// undeclared @@temperature@@ is a warning: the worker fills 27 degC), and the
-// value gates (ideal R/C/L ranges on literals and parameter names —
-// expressions at R/C/L value positions are rejected, nf/m multiplier ranges,
-// geometry unit suffixes) resolved through the workspace check-parameter chain
+// LF/ASCII, @@P@@ placeholders on the parameters statement and on include
+// statements (path/section text sweeps), no scientific notation — SI suffixes
+// only), sweep-parameter presence (an undeclared @@temperature@@ is a warning:
+// the worker fills 27 degC), and the value gates (ideal R/C/L ranges on
+// literals and parameter names — expressions at R/C/L value positions are
+// rejected, the nf range with its warning threshold, m rejected by default
+// with a same-line // m-release comment as the release, geometry unit
+// suffixes) resolved through the workspace check-parameter chain
 // (project check_params.json / the calling session's confirmed table). Pure JS
 // checks — nothing executes, nothing is written. A managed sweep flow stages
 // run directories only after running this same check automatically, so a
@@ -23,15 +25,19 @@ export function spectreTools(ctx = {}) {
       name: 'spectre_pre_check',
       description: 'Validate a hand-written Spectre run directory (template*.scs + sweep_config.json): '
         + 'language format (simulator lang=spectre declared, no SPICE-only directives, LF/ASCII '
-        + 'text, no scientific notation — SI suffixes only, @@P@@ placeholders only on the '
-        + 'parameters statement — the circuit references parameters by name), sweep-parameter '
+        + 'text, no scientific notation — SI suffixes only, @@P@@ placeholders on the parameters '
+        + 'statement — the circuit references parameters by name — and on include statements, '
+        + 'where the path or the section= value may sweep), sweep-parameter '
         + 'presence (every swept parameter needs its @@P@@ placeholder, every placeholder needs '
         + 'its config entry; an undeclared @@temperature@@ stays a warning — the worker fills '
         + '27 degC), and the value gates from the workspace check-parameter chain (ideal R/C/L '
         + 'ranges on literals and parameter names — expressions at R/C/L value positions are '
-        + 'rejected; nf/m multiplier ranges, u/n geometry suffixes; project check_params.json '
+        + 'rejected; nf range with a warning threshold above it (nf_warn, default 50), m '
+        + 'rejected by default — a // m-release comment on the m= line releases it, then the '
+        + 'range gate applies; u/n geometry suffixes; project check_params.json '
         + 'plus the calling session\'s confirmed table). sweep_config.json shape: parameters is '
-        + 'a dict of value lists (SI-suffixed strings for swept R/C/L values), plus sweep_mode '
+        + 'a dict of value lists (SI-suffixed strings for swept R/C/L values, plain strings for '
+        + 'include path/section sweeps), plus sweep_mode '
         + 'and netlist_template. Pure checks — nothing executes. '
         + 'A managed sweep flow stages run directories only after running this same check '
         + 'automatically, so a direct call is a re-run of the same check, not a required '
