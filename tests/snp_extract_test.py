@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """snp_extract numeric regressions (run as a plain script; invoked by tests/snp.test.mjs).
 
-Single-process consolidation of the numeric assertions that used to spawn one
-python CLI chain (synth -> read -> extract) per assertion from snp.test.mjs:
-fixtures are generated through tests/synth_helper.py in-process, the reader
+Single-process consolidation of the numeric assertions, one python CLI chain
+(synth -> read -> extract) per case: fixtures are generated through
+tests/synth_helper.py in-process, the reader
 and the extractor run through their main(argv) in-process, and every
 tolerance carries over unchanged. Regression against the anonymized real EM
 data in tests/data keeps its reference values; the CLI 0/1/2 exit contract,

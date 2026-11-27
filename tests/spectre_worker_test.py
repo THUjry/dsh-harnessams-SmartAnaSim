@@ -194,14 +194,14 @@ def test_main_progress_and_markers():
             assert prog["total_points"] == 2 and prog["succeeded"] == 2, prog
             assert prog["simulator"] == "spectre", prog
             assert open(os.path.join(tmp, ".simulator"), encoding="utf-8").read().strip() == "spectre"
-            # D-006/D-003 telemetry: sweep_progress.json carries the toolchain
+            # telemetry: sweep_progress.json carries the toolchain
             # the job really ran under — the self-check harvests it to pin the
             # project and remember the node (measurement, never a guess)
             tc = prog.get("toolchain")
             assert tc and tc.get("python") == sys.executable, tc
             assert tc.get("spectre") == sys.executable, tc
             assert isinstance(tc.get("node"), str) and tc["node"], tc
-            # D-008: the numpy tri-state rides along (yes / fallback / no)
+            # the numpy tri-state rides along (yes / fallback / no)
             assert tc.get("numpy") in ("yes", "no", "fallback"), tc
     finally:
         W.run_single_point = original_run
@@ -209,7 +209,7 @@ def test_main_progress_and_markers():
 
 
 def test_probe_numpy_state():
-    # D-008: the tri-state the telemetry carries — "yes" (native import),
+    # the tri-state the telemetry carries — "yes" (native import),
     # "fallback" (the staged numfallback asset imports), "no" (neither, e.g. a
     # python 2 shell). Never raises; a native numpy import must answer "yes".
     state = W.probe_numpy_state()
@@ -321,8 +321,8 @@ def test_timeout_extensions_take_max():
 
 def test_resolve_spectre_cmd_both_separators():
     # a forward-slash relative path ("bin/spectre") on Windows carries no
-    # os.sep — it used to skip the work_dir join and fall into the which()
-    # lookup as a path fragment
+    # os.sep — it must still join against work_dir, never fall into the
+    # which() lookup as a path fragment
     with tempfile.TemporaryDirectory() as tmp:
         got = W.resolve_spectre_cmd({}, tmp, "bin/spectre")
         assert got == os.path.normpath(os.path.join(tmp, "bin", "spectre")), got
@@ -387,8 +387,8 @@ def test_progress_writes_during_a_long_single_point():
 
 
 def test_main_rejects_zero_max_parallel():
-    # explicit 0 used to fall through `or` into the default 4 silently; it is
-    # a startup error now (both the --max-parallel flag and the config value)
+    # explicit 0 is a startup error (both the --max-parallel flag and the
+    # config value), never a silent fall-through into the default 4
     original_run = W.run_single_point
     original_resolve = W.resolve_spectre_cmd
     try:

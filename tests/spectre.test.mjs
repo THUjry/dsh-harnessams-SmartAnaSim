@@ -31,7 +31,7 @@ test('spectre: netlist checks — @@ placement, RCL/mult ranges, geometry suffix
   assert.match(stdout, /spectre checks tests ok/)
 })
 
-// Per-session check-params channel (HarnessAMS D-003): the calling session's
+// Per-session check-params channel: the calling session's
 // id rides DSH_SESSION_ID to the Python workers through py.js sessionEnv; a
 // delegated subagent resolves to its topmost user-visible ancestor
 // (src/subagent.js), and an absent identity (direct server-side calls, tests)

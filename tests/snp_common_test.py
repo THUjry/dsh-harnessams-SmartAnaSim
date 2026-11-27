@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """snp_common loader tests (run as a plain script; invoked by tests/snp.test.mjs).
 
-Covers the 2026-11-26 robustness batch: Touchstone option-line unit scanning
+Covers the loader-level robustness contracts: Touchstone option-line unit scanning
 (position-independent, with a non-standard-order warning), psfascii port
 base unification (EMX lowercase "port<k>:" is 1-based) and multi-digit
 detect_n (ports >= 10), duplicate-frequency params-CSV folding, and the
@@ -19,8 +19,8 @@ from snp import snp_common as sc  # noqa: E402
 
 
 def test_touchstone_unit_order():
-    # "# MA R 50 GHZ" puts the unit at token 4: it is applied (used to stay
-    # HZ silently) and a warning marks the non-standard order
+    # "# MA R 50 GHZ" puts the unit at token 4: it is applied, and a
+    # warning marks the non-standard order
     with tempfile.TemporaryDirectory() as tmp:
         p = os.path.join(tmp, "ord.s2p")
         with open(p, "w", encoding="utf-8", newline="\n") as f:
@@ -129,7 +129,7 @@ def test_psf_colon_trace_names():
         assert abs(zd.mats[0][0][0].real - 0.01) < 1e-12, zd.mats[0][0][0]
         assert abs(zd.mats[0][4][9].real - 0.05) < 1e-12, zd.mats[0][4][9]
         assert abs(zd.mats[0][4][9].imag - 0.10) < 1e-12, zd.mats[0][4][9]
-        # a 25-port deck (the 2026-11-26 incident shape) parses end to end
+        # a 25-port deck parses end to end
         p25 = os.path.join(tmp, "colon25.sp")
         _write_colon_sp(p25, 25)
         zd25 = sc.parse_psfascii(p25)
@@ -152,8 +152,8 @@ def test_psf_colon_names_stay_distinct_at_11_ports():
 
 
 def test_params_csv_duplicate_frequency():
-    # a repeated frequency block used to merge silently over the first copy
-    # (and emit the merged matrix twice); the first copy now wins, with a
+    # a repeated frequency block must not merge silently over the first copy
+    # (nor emit the merged matrix twice): the first copy wins, with a
     # warning naming the frequency
     with tempfile.TemporaryDirectory() as tmp:
         p = os.path.join(tmp, "dup.csv")
@@ -181,9 +181,8 @@ def test_params_csv_duplicate_frequency():
 
 
 def test_z_to_s2_single_z0_broadcast():
-    # a single z0 entry with an n>1 matrix (params CSV "zref=50") used to
-    # raise IndexError on sq[i]; it broadcasts to every port now, to_z's
-    # precedent
+    # a single z0 entry with an n>1 matrix (params CSV "zref=50")
+    # broadcasts to every port (to_z's precedent), never raising on sq[i]
     zmat = [[50.0 + 0j, 1.0 + 0j], [1.0 + 0j, 50.0 + 0j]]
     s = sc.z_to_s2(zmat, [50.0])
     assert len(s) == 2 and len(s[0]) == 2, s

@@ -6,7 +6,7 @@ the template*.scs naming family, and one clean-run smoke over the full GOOD
 netlist. The shared netlist contract surface (language format, sweep
 presence, RCL/mult value gates, geometry suffixes) is owned by the JS
 engine's tests (tests/precheck.test.mjs) — the tool path never spawns this
-library, so the mirrored cases were dropped (2026-11-26 test wave).
+library, so the mirrored cases are not duplicated here.
 Run as a plain script; invoked by tests/spectre.test.mjs.
 
 Usage: python -B tests/spectre_checks_test.py
@@ -150,7 +150,7 @@ def test_check_params_config():
 
 
 def test_check_params_session_layer():
-    """Per-session table (D-003): DSH_SESSION_ID -> sessions.json entry
+    """Per-session table: DSH_SESSION_ID -> sessions.json entry
     check_params overrides the project file per-key; every failure shape
     (no env, no entry, corrupt sessions.json, off-spec values) falls back
     to the project layer / defaults, fail-open.
@@ -237,10 +237,10 @@ def test_check_params_session_layer():
 
 
 def test_template_naming_family():
-    """template*.scs family names pass silently (2026-11-21 relaxation).
+    """template*.scs family names pass silently.
 
-    Only names outside the family warn now; the exact template.scs requirement
-    moved to the batch uploader's declared-vs-uploaded match.
+    Only names outside the family warn; the exact template.scs requirement
+    is the batch uploader's declared-vs-uploaded match.
     """
     def naming(name):
         _, warns = check_netlist_format(GOOD, parameters=GOOD_PARAMS, template_name=name)

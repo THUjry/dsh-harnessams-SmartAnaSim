@@ -168,7 +168,7 @@ test('swept name-reference values: ranges, numeric base units, declared defaults
   const rclErrs = def.errors.filter((e) => e.startsWith('rcl:'))
   assert.equal(rclErrs.length, 1)
   assert.ok(rclErrs[0].includes('rbork'), rclErrs)
-  // expressions at RCL value positions are rejected outright (2026-11-25 ruling)
+  // expressions at RCL value positions are rejected outright
   const expr = await runPreCheck(makeRun(
     'simulator lang=spectre\nparameters k=2\nR1 (a b) resistor r=(k*rx)\n', { parameters: {} }), null)
   assert.ok(expr.errors.some((e) => e.includes('expressions are not allowed')), expr.errors)
@@ -243,10 +243,10 @@ test('zero is the legal degenerate element for every RCL kind', async () => {
     { parameters: { cpf: ['0f'], l_val: ['0n'] } }), null)).ok, true)
 })
 
-test('regression: a session-tightened 1nF capacitor floor blocks the fF scan', async () => {
-  // The Check20261125_2 origin scenario, fixed: the netlist is the NEW idiom
-  // (c=cpf + suffixed values) and the session layer tightens c to [1n, 1uF] —
-  // every nonzero fF value must flag, so the managed flow's gate throws.
+test('a session-tightened 1nF capacitor floor blocks the fF scan', async () => {
+  // The netlist uses the c=cpf idiom with suffixed values and the session
+  // layer tightens c to [1n, 1uF] — every nonzero fF value must flag, so
+  // the managed flow's gate throws.
   const ws = mkdtempSync(path.join(tmpdir(), 'hams-1nf-'))
   mkdirSync(path.join(ws, '.harnessams'))
   writeFileSync(path.join(ws, '.harnessams', 'sessions.json'), JSON.stringify({

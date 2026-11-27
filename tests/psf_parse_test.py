@@ -284,9 +284,9 @@ def test_sp_directory_flatten():
 def test_csv_sweep_axis():
     # the sweep_value column carries the real sweep axis — time/freq when
     # present, else the first list-valued signal (a swept vds on dc
-    # analyses); hardcoded time/freq used to leave the column empty for
-    # every other analysis. Every list signal stays a row, the axis
-    # INCLUDED (selfcheck_verify consumes the axis rows as a curve).
+    # analyses), so the column is filled for every analysis. Every list
+    # signal stays a row, the axis INCLUDED (selfcheck_verify consumes the
+    # axis rows as a curve).
     with tempfile.TemporaryDirectory() as tmp:
         json_path, csv_path, _ = P._write_point("dc", str(DATA),
                                                 _Res({"vds": [0.0, 0.5, 1.0],
@@ -309,8 +309,8 @@ def test_csv_sweep_axis():
 
 
 def test_nonfinite_scalars_gate():
-    # nan/inf scalars land as null (the _encode_values twin for scalars):
-    # they used to reach the allow_nan=False dump and crash the whole CLI
+    # nan/inf scalars land as null (the _encode_values twin for scalars),
+    # keeping the allow_nan=False JSON dump whole
     with tempfile.TemporaryDirectory() as tmp:
         json_path, _, _ = P._write_point(
             "bad", str(DATA),

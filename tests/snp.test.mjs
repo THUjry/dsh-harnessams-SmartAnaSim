@@ -69,15 +69,15 @@ test('snp_common: touchstone unit order, psf port base, duplicate freq, z0 guard
 })
 
 // ---------------------------------------------------------------------------
-// Tool-face contract regressions (2026-11-09 code review): the JS tools parse
+// Tool-face contract pins: the JS tools parse
 // the Python "[snp] wrote <path>" lines instead of re-deriving the stem, and
 // the unphysical exit-1 result must surface as a structured ok=false return.
 // ---------------------------------------------------------------------------
 
 test('tool face: snp_read returns a summary for a params-CSV input (stem contract)', async () => {
   // The Python side strips a previous _params_X suffix from the output stem;
-  // the old JS re-derivation did not, so x_params_S.csv lost its summary
-  // silently (readJsonIfExists -> null) — the exact bug this pins out.
+  // the JS tool must follow that rule — an x_params_S.csv input still carries
+  // its summary, never a silent null.
   const s = await synth('xfmr2', 'xfmr2.s2p')
   const first = await readSnp(s.file) // touchstone -> <stem>_params_S.csv
   const csv = path.join(first.dir, `${first.stem}_params_S.csv`)
@@ -108,9 +108,9 @@ test('tool face: snp_extract with no JSON on failure still throws', async () => 
 })
 
 test('tool face: snp_extract rejects unknown parameter keys with the valid list', async () => {
-  // the argv passthrough used to forward ANY key as an invented CLI flag
-  // (validateArgs only checks declared properties) — reject here instead,
-  // before any spawn: no fixture needed
+  // the argv passthrough must not forward ANY key as an invented CLI flag
+  // (validateArgs only checks declared properties) — reject before any
+  // spawn: no fixture needed
   await assert.rejects(() => snpTools().find((d) => d.name === 'snp_extract')
     .execute({ file: 'never-read.csv', type: 'tl', freq: 1e9 }),
     /unknown parameter\(s\): freq\b.*valid keys: file, type, freq_hz/)
