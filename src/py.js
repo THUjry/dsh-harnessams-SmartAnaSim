@@ -26,7 +26,7 @@ export async function runPython(scriptRel, args, timeoutMs = 900_000, options = 
   // options.env MERGES into the child env (callers thread per-session facts
   // like DSH_SESSION_ID through; a full env replacement would drop PATH etc.).
   // options.signal rides execFile's native AbortSignal support: the session
-  // stop kills the python child at once (D-029 discipline; the long-running
+  // stop kills the python child at once (D-004 discipline; the long-running
   // tools — snp_read, snp_extract, post_check — pass their exec.signal).
   const { env: extraEnv, ...rest } = options
   const opts = {
@@ -65,7 +65,7 @@ export function readJsonIfExists(file) {
   }
 }
 
-// Per-session env overlay for Python workers (HarnessAMS D-005): the calling
+// Per-session env overlay for Python workers (HarnessAMS D-003): the calling
 // session's id rides DSH_SESSION_ID and common_workspace.read_check_params
 // resolves that session's confirmed check table with it. A delegated subagent
 // anchors on its topmost user-visible ancestor (src/subagent.js), so the

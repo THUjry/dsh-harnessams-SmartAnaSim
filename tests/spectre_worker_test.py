@@ -194,14 +194,14 @@ def test_main_progress_and_markers():
             assert prog["total_points"] == 2 and prog["succeeded"] == 2, prog
             assert prog["simulator"] == "spectre", prog
             assert open(os.path.join(tmp, ".simulator"), encoding="utf-8").read().strip() == "spectre"
-            # D-016/D-017 telemetry: sweep_progress.json carries the toolchain
+            # D-006/D-003 telemetry: sweep_progress.json carries the toolchain
             # the job really ran under — the self-check harvests it to pin the
             # project and remember the node (measurement, never a guess)
             tc = prog.get("toolchain")
             assert tc and tc.get("python") == sys.executable, tc
             assert tc.get("spectre") == sys.executable, tc
             assert isinstance(tc.get("node"), str) and tc["node"], tc
-            # D-021: the numpy tri-state rides along (yes / fallback / no)
+            # D-008: the numpy tri-state rides along (yes / fallback / no)
             assert tc.get("numpy") in ("yes", "no", "fallback"), tc
     finally:
         W.run_single_point = original_run
@@ -209,7 +209,7 @@ def test_main_progress_and_markers():
 
 
 def test_probe_numpy_state():
-    # D-021: the tri-state the telemetry carries — "yes" (native import),
+    # D-008: the tri-state the telemetry carries — "yes" (native import),
     # "fallback" (the staged numfallback asset imports), "no" (neither, e.g. a
     # python 2 shell). Never raises; a native numpy import must answer "yes".
     state = W.probe_numpy_state()

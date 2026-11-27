@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Small shared helpers for the HarnessAMS pipeline scripts.
 
-The family-level `harnessams.json` discovery is retired (2026-11-19, D-010):
+The family-level `harnessams.json` discovery is retired (2026-11-19, D-002):
 config is per-project now (<project>/.harnessams/workspace_config.json on the
 plugin side), and the only consumer the family walker had left — the sweep
 worker's spectre_cmd lookup — takes the executable from --spectre-cmd,
@@ -125,7 +125,7 @@ def _read_project_params(cand):
 
 def _apply_session_params(sessions_path, session_id, params):
     """Session layer: the calling session's confirmed table (sessions.json,
-    HarnessAMS D-009 shape {sessions: {<sid>: {check_params: …}}}) merged
+    HarnessAMS D-007 shape {sessions: {<sid>: {check_params: …}}}) merged
     per-key over the project layer. Fail-open: a missing/corrupt file or a
     session without its own table leaves the project layer untouched."""
     cache_key = (sessions_path, session_id)
@@ -149,7 +149,7 @@ def _apply_session_params(sessions_path, session_id, params):
 
 def read_check_params(start_dir):
     """Effective check parameters for the workspace tree above start_dir
-    (fail-open). Resolution chain (HarnessAMS D-009, per-session params):
+    (fail-open). Resolution chain (HarnessAMS D-007, per-session params):
 
         built-in defaults  <-  .harnessams/check_params.json (project layer)
                            <-  the CALLING session's confirmed table in
