@@ -321,9 +321,12 @@ test('input errors are structured, not thrown', async () => {
 test('check-parameter chain: builtin <- project <- session, fail-open', () => {
   const ws = mkdtempSync(path.join(tmpdir(), 'hams-chain-'))
   mkdirSync(path.join(ws, '.harnessams'))
-  writeFileSync(path.join(ws, '.harnessams', 'check_params.json'), JSON.stringify({
-    rcl: { c: [1e-15, 1e-9] }, mult: { nf: [1, 8] }, unit_check: false,
-  }))
+  // the project file carries a BOM (a zh-CN Windows hand-edit): python reads
+  // the same file with utf-8-sig, so the JS chain must adopt it too
+  writeFileSync(path.join(ws, '.harnessams', 'check_params.json'),
+    '\uFEFF' + JSON.stringify({
+      rcl: { c: [1e-15, 1e-9] }, mult: { nf: [1, 8] }, unit_check: false,
+    }))
   writeFileSync(path.join(ws, '.harnessams', 'sessions.json'), JSON.stringify({
     version: 2,
     sessions: {
@@ -342,7 +345,7 @@ test('check-parameter chain: builtin <- project <- session, fail-open', () => {
   assert.deepEqual(builtin.params.mult.nf, [1, 128])
 
   const project = readCheckParamsChain(run1, 'no-such-session')
-  assert.equal(project.source, 'project')
+  assert.equal(project.source, 'project', 'the BOM must not read as a corrupt file')
   assert.deepEqual(project.params.rcl.c, [1e-15, 1e-9])
   assert.deepEqual(project.params.mult.nf, [1, 8])
   assert.equal(project.params.unit_check, false)
@@ -361,21 +364,6 @@ test('check-parameter chain: builtin <- project <- session, fail-open', () => {
   const corrupt = readCheckParamsChain(run1, 'sessA')
   assert.equal(corrupt.source, 'session')
   assert.deepEqual(corrupt.params.rcl.c, [1e-15, 1e-6]) // default c back
-})
-
-test('a BOM-prefixed project check_params.json still applies (utf-8-sig parity)', () => {
-  // python reads the same file with utf-8-sig (common_workspace); a zh-CN
-  // Windows hand-edit carrying a BOM must apply in BOTH chains, not only
-  // the python one (the JS read used to throw on it and silently fail open)
-  const ws = mkdtempSync(path.join(tmpdir(), 'hams-bom-'))
-  mkdirSync(path.join(ws, '.harnessams'))
-  writeFileSync(path.join(ws, '.harnessams', 'check_params.json'),
-    '\uFEFF' + JSON.stringify({ rcl: { c: [1e-15, 1e-9] } }))
-  const run1 = path.join(ws, 'run1')
-  mkdirSync(run1)
-  const project = readCheckParamsChain(run1, 'no-such-session')
-  assert.equal(project.source, 'project', 'the BOM must not read as a corrupt file')
-  assert.deepEqual(project.params.rcl.c, [1e-15, 1e-9])
 })
 
 test('the chain drives the gates: same netlist, different effective ranges', async () => {
