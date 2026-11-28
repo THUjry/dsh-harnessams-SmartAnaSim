@@ -2,9 +2,13 @@
 
 Companion page of the `smart-spectre` root skill for the Virtuoso schematic interaction face. Direction: everything that writes INTO an OpenAccess library — importing a netlist as a schematic, generating the symbol and the `<cell>_tb` testbench skeleton, writing tuned parameters back into a schematic copy, and re-importing a tuned netlist (F2). The tool face is `gen_vsch_import` (schemes `param` / `cli` / `plain_skill`); this page carries the recipes and pitfalls the tool text embeds, plus the parameter-writeback recipe (no tool scheme — compose the Cadence SKILL text yourself, guided here).
 
+## The gen_vsch_* shared contract (mirrored in both Virtuoso pages)
+
+`gen_vsch_import` (netlist -> OA) and `gen_vsch_export` (.oa -> netlist) assemble ready-to-run text blocks ONLY — nothing is executed and no files are written (cds.lib layout and install roots are environment-specific, so execution is left to the caller: run the assembled command line yourself, or paste a `plain_skill` block into an open CIW — every scheme carries a `plain_skill` variant). Called without a `scheme` argument, every scheme comes back structured — try them in the listed order (import: `param` -> `cli` -> `plain_skill`; export: `si` -> `ocean` -> `cdlout` -> `plain_skill`); the per-scheme recipes and pitfalls are this page's own sections. This chapter is deliberately duplicated in `virtuoso-import.md` and `virtuoso-export.md` so either page stands alone — keep the two copies identical when editing one.
+
 ## Round-trip charter (overview — applies to both directions)
 
-The `gen_vsch_*` tools assemble ready-to-run text for the netlist <-> OpenAccess round trip (they never execute anything and write no files — cds.lib layouts and install roots are environment-specific, so execution belongs to the caller; every scheme also carries a `plain_skill` variant: self-contained Cadence SKILL text pasteable into an open CIW). Workflow charter:
+The `gen_vsch_*` tools assemble ready-to-run text for the netlist <-> OpenAccess round trip — the shared contract (never execute, no files, the `plain_skill` CIW variant) is the mirrored chapter above. Workflow charter:
 
 | Phase | Who / what | What happens |
 |---|---|---|

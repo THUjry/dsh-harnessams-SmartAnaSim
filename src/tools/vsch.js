@@ -498,16 +498,13 @@ export function vschTools() {
   return [
     {
       name: 'gen_vsch_import',
-      description: 'Assemble Virtuoso netlist-import text (netlist -> OA schematic). '
-        + 'Returns ready-to-run text blocks only — nothing is executed and no files are '
-        + 'written (cds.lib layout and install roots are environment-specific, so '
-        + 'execution is left to the caller). Schemes: param (spiceIn -param parameter '
-        + 'file; +PLACE_ONLY label connectivity by default), cli (standalone spiceIn '
-        + 'flags, full place and route, battle-tested), plain_skill (self-contained '
-        + 'Cadence SKILL text: conn2Sch + symbol + <cell>_tb, CIW-pasteable). Without '
-        + 'scheme, every scheme comes back structured — try them in order. Full recipes '
-        + 'and pitfalls: the bundled smart-spectre skill, virtuoso-import.md / '
-        + 'virtuoso-export.md.',
+      description: 'Assemble Virtuoso netlist-import text (netlist -> OA schematic) — '
+        + 'ready-to-run text blocks only, nothing is executed and no files are written. '
+        + 'Schemes: param (spiceIn -param parameter file; +PLACE_ONLY label connectivity '
+        + 'by default), cli (standalone spiceIn flags, full place and route, '
+        + 'battle-tested), plain_skill (self-contained Cadence SKILL text: conn2Sch + '
+        + 'symbol + <cell>_tb, CIW-pasteable). Recipes, pitfalls and the contract '
+        + 'shared by both gen_vsch_* tools: the smart-spectre page virtuoso-import.md.',
       parameters: {
         netlist_file: { type: 'string', required: true, description: 'Netlist file to import (.scs / .spf / .dspf)' },
         scheme: { type: 'string', description: 'Assemble one scheme only: param | cli | plain_skill (default: all three, ordered)', enum: ['param', 'cli', 'plain_skill'] },
@@ -525,15 +522,14 @@ export function vschTools() {
     },
     {
       name: 'gen_vsch_export',
-      description: 'Assemble Virtuoso schematic-export text (.oa -> Spectre netlist). '
-        + 'Returns ready-to-run text blocks only — nothing is executed and no files are '
-        + 'written. Schemes: si (si -batch -command nl, needs a one-time CIW-minted '
-        + 'si.env), ocean (headless ocean with per-run CDS.log isolation, no si.env), '
-        + 'cdlout (CDL/LVS vocabulary via si -command netlist with a hand-built auCdl '
-        + 'si.env), plain_skill (OCEAN/SKILL text to paste into an open CIW — zero '
-        + 'startup). Without scheme, every scheme comes back structured — try them in '
-        + 'order. Full recipes and pitfalls: the bundled smart-spectre skill, '
-        + 'virtuoso-export.md.',
+      description: 'Assemble Virtuoso schematic-export text (.oa -> Spectre netlist) — '
+        + 'ready-to-run text blocks only, nothing is executed and no files are written. '
+        + 'Schemes: si (si -batch -command nl, needs a one-time CIW-minted si.env), '
+        + 'ocean (headless ocean with per-run CDS.log isolation, no si.env), cdlout '
+        + '(CDL/LVS vocabulary via si -command netlist with a hand-built auCdl si.env), '
+        + 'plain_skill (OCEAN/SKILL text to paste into an open CIW — zero startup). '
+        + 'Recipes, pitfalls and the contract shared by both gen_vsch_* tools: the '
+        + 'smart-spectre page virtuoso-export.md.',
       parameters: {
         lib: { type: 'string', required: true, description: 'OA library of the cell to export' },
         cell: { type: 'string', required: true, description: 'Cell to export' },

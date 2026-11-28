@@ -2,6 +2,10 @@
 
 Companion page of the `smart-spectre` root skill for the Virtuoso schematic interaction face. Direction: everything that reads OUT of an OpenAccess library — exporting a Spectre netlist from a schematic, the tuning/diff round trip, and the ocean batching facts (CDS.log isolation) that make headless ocean coexist with live GUI sessions. The tool face is `gen_vsch_export` (schemes `si` / `ocean` / `cdlout` / `plain_skill`); this page carries the recipes and pitfalls the tool text embeds.
 
+## The gen_vsch_* shared contract (mirrored in both Virtuoso pages)
+
+`gen_vsch_import` (netlist -> OA) and `gen_vsch_export` (.oa -> netlist) assemble ready-to-run text blocks ONLY — nothing is executed and no files are written (cds.lib layout and install roots are environment-specific, so execution is left to the caller: run the assembled command line yourself, or paste a `plain_skill` block into an open CIW — every scheme carries a `plain_skill` variant). Called without a `scheme` argument, every scheme comes back structured — try them in the listed order (import: `param` -> `cli` -> `plain_skill`; export: `si` -> `ocean` -> `cdlout` -> `plain_skill`); the per-scheme recipes and pitfalls are this page's own sections. This chapter is deliberately duplicated in `virtuoso-import.md` and `virtuoso-export.md` so either page stands alone — keep the two copies identical when editing one.
+
 ## Route 1: `si -batch` (first choice)
 
 `si` is an independent batch translator (no GUI, no Maestro, seconds to start) — the first choice for export and for validation re-exports.
