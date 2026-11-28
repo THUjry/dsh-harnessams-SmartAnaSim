@@ -1,6 +1,6 @@
 # spectre-grammar — spectre syntax essentials
 
-Netlist-language rules the templates and analyses rely on: placeholder discipline, the Spectre-vs-SPICE rules, units, and a section per analysis type spelling out its particularities — AC excitation, S-parameter `paramtype=yz` matrix output and result organization, the swept-PSS configuration and its pitfalls. The operational side — running, sweeping, parsing — lives in `spectre-cli.md`.
+Netlist-language rules the templates and analyses rely on: placeholder discipline, the Spectre-vs-SPICE rules, units, the merged reserved-word tables and name forms, and a section per analysis type spelling out its particularities — AC excitation, S-parameter `paramtype=yz` matrix output and result organization, the swept-PSS configuration and its pitfalls. The operational side — running, sweeping, parsing — lives in `spectre-cli.md`.
 
 ## Template placeholder rules (`@@PARAM@@` on the `parameters` and `include` lines)
 
@@ -34,9 +34,22 @@ Only the `parameters` line needs `@@...@@` placeholders. `@@(\w+)@@` matches `[a
 
 ## Reserved words and name forms
 
-The merged official reserved-word tables own the name space, and every collision is an error — no tiers: netlist keywords (39, plus the prot/unprot abbreviations), built-in math/physics constants, math functions, `analogmodel` and the known analysis and primitive names on instance/subckt/model name slots; constants, math functions and the User-Guide keyword subset on net names (`in`/`out`/`input`/`output`/`invisible`/`unprotect`/`visible` stay legal as net names — the manuals carve them out); the reserved parameters `temp tnom scale scalem freq time` must never be declared (a `parameters` statement and a sweep-config key are both declarations). The analysis statement's own name slot (`ac ac`, `sp sp`) is convention, not a violation — analysis statements carry no parenthesized net list, so they never reach the name extraction; the instance master slot (the primitive/model reference after the net list) names an external library object, not a hand-written name, and is not checked either.
+The merged official reserved-word tables own the name space, and every collision is an error — no tiers: instance/subckt/model name slots collide with the netlist keywords (plus the `prot`/`unprot` abbreviations, which occupy the same name space), the math/physics constants, the math functions, `analogmodel`, and the known analysis and primitive names; net-name slots collide with the constants, the math functions and the User-Guide keyword subset — `in`/`out`/`input`/`output`/`invisible`/`unprotect`/`visible` stay legal as net names, the manuals carve them out. The analysis statement's own name slot (`ac ac`, `sp sp`) is convention, not a violation — analysis statements carry no parenthesized net list, so they never reach the name extraction; the instance master slot (the primitive/model reference after the net list) names an external library object, not a hand-written name, and is not checked either.
 
-Name forms follow the official identifier rules: `^[A-Za-z_][A-Za-z0-9_]*$` everywhere, with net names additionally accepting a pure integer (`0`, `07` — leading zeros significant) or a bang suffix (`vdd!`, the global-net idiom). Unescaped `$`, `@`, `-`, blanks, tabs or punctuation are errors, and the backslash escape (`\2N2222` — the official legacy-compat back door, "use these features only when necessary") is banned outright here: rename instead. Boundary notes: an escaped name never reaches the value gates (the instance regex requires a plain leading identifier), and a name containing an escaped blank cannot be represented under whitespace tokenization — moot while escapes are banned.
+The lists behind those slots:
+
+| Group | Count | Names |
+|---|---|---|
+| Netlist keywords | 39 | altergroup, correlate, else, end, ends, export, for, function, global, ic, if, in, input, inline, invisible, library, local, march, model, nodeset, out, output, parameters, paramset, plot, print, protect, pwr, real, return, save, sens, statistics, subckt, to, truncate, unprotect, vary, visible |
+| Netlist reserved words | 6 | freq, scalem, temp, time, tnom, temper |
+| Math/physics constants | 22 | M_1_PI, M_2_PI, M_2_SQRTPI, M_DEGPERRAD, M_E, M_LN10, M_LN2, M_LOG10E, M_LOG2E, M_PI, M_PI_2, M_PI_4, M_SQRT1_2, M_SQRT2, M_TWO_PI, P_C, P_CELSIUS0, P_EPS0, P_H, P_K, P_Q, P_U0 |
+| Math functions | 25 | abs, acos, acosh, asin, asinh, atan, atan2, atanh, ceil, cos, cosh, exp, floor, hypot, int, log, log10, max, min, pow, sin, sinh, sqrt, tan, tanh |
+
+The reserved parameters `temp tnom scale scalem freq time` must never be declared — a `parameters` statement and a sweep-config key are both declarations; five of the six reappear among the Netlist Reserved Words in the table, while `temper` lives only there and `scale` only in this list — the two books complement each other. `analogmodel` is reserved by name (it is the `modelname` binding slot); `m` appears in no table — it is the multiplier gate's business, covered above. Analysis and primitive names are open sets the manuals only illustrate (`tran`, `resistor`) — the pre-check matches them against known-name lists, an approximation by design.
+
+Name forms follow one pure-ASCII rule — a C identifier, `^[A-Za-z_][A-Za-z0-9_]*$`, everywhere — and the manuals grant it exactly three exceptions: a pure-integer net name (`0`, `07`; leading zeros are significant), a bang suffix (`vdd!`, the global-net idiom), and the backslash escape (`\2N2222`), a legacy-compat back door the manuals introduce with "use these features only when necessary". The pre-check admits the first two on net names only and bans the backslash escape outright: rename instead. Unescaped `$`, `@`, `-`, blanks, tabs or punctuation are errors, and spectre-mode input is fully case sensitive. Boundary notes: an escaped name never reaches the value gates (the instance regex requires a plain leading identifier), and a name containing an escaped blank cannot be represented under whitespace tokenization — moot while escapes are banned.
+
+Source: the installed Spectre manuals under `$CDSHOME/doc` (the simulator Reference and the User Guide).
 
 ## The instance multiplier `m` — tiered semantics, rejected by default
 
