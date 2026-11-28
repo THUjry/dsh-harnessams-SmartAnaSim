@@ -40,6 +40,14 @@ Checks:
 - ``l|w|lr|wr|rl|rw`` swept name values must be u/n-suffixed strings, never
   bare numbers (Spectre reads a bare number as metres); literal bare geometry
   warns;
+- reserved words and name forms (the merged official tables): keyword /
+  constant / math-function / reserved-parameter / analysis / primitive
+  collisions on instance, subckt, model, net and parameter name slots are
+  errors, as is every name form outside ``^[A-Za-z_][A-Za-z0-9_]*$`` (net
+  names additionally a pure integer or a bang suffix) — the backslash escape
+  is banned outright;
+- template size gates: above 10 KB warn (move large definitions into included
+  files), above 100 KB reject outright (split with include statements);
 - the template name should be a ``template*.scs`` family name (warning).
 
 Workspace defaults (2026-11-25 shape): <workspace>/.harnessams/
@@ -110,6 +118,69 @@ NF_WARN = CHECK_PARAMS_DEFAULTS["nf_warn"]
 # line as the m= usage; whole-line comments are dropped before this runs).
 _M_USAGE = re.compile(r"\bm\s*=")
 _M_RELEASE = re.compile(r"//.*\bm-release\b")
+# Template size gates (mirrors src/precheck.js): a hand-written template*.scs
+# is typically a few KB — past the warn line large definitions belong in their
+# own included files, past the hard cap the file is almost certainly a
+# generated or flattened netlist mounted in the netlist_template slot.
+TEMPLATE_WARN_BYTES = 10 * 1024
+TEMPLATE_MAX_BYTES = 100 * 1024
+# Reserved-word tables, the merged official lists (mirrors src/precheck.js;
+# the root repo's reserved-words research note under dev/todo): Reference netlist keywords
+# (39 plus the prot/unprot abbreviations, both cases), the User-Guide keyword
+# subset that extends to net/parameter names (39 minus the seven net-legal
+# words), constants, math functions, the reserved parameters (must not be
+# declared), analogmodel, and the avoid-surface approximations. Membership is
+# case-sensitive ("case specified").
+_KEYWORDS = frozenset((
+    "altergroup", "correlate", "else", "end", "ends", "export", "for",
+    "function", "global", "ic", "if", "in", "input", "inline", "invisible",
+    "library", "local", "march", "model", "nodeset", "out", "output",
+    "parameters", "paramset", "plot", "print", "protect", "pwr", "real",
+    "return", "save", "sens", "statistics", "subckt", "to", "truncate",
+    "unprotect", "vary", "visible", "prot", "PROT", "unprot", "UNPROT"))
+_UG_KEYWORDS = frozenset((
+    "altergroup", "correlate", "else", "end", "ends", "export", "for",
+    "function", "global", "ic", "if", "inline", "library", "local", "march",
+    "model", "nodeset", "parameters", "paramset", "plot", "print", "protect",
+    "pwr", "real", "return", "save", "sens", "statistics", "subckt", "to",
+    "truncate", "vary", "visible"))
+_CONSTANTS = frozenset((
+    "M_1_PI", "M_2_PI", "M_2_SQRTPI", "M_DEGPERRAD", "M_E", "M_LN10",
+    "M_LN2", "M_LOG10E", "M_LOG2E", "M_PI", "M_PI_2", "M_PI_4", "M_SQRT1_2",
+    "M_SQRT2", "M_TWO_PI", "P_C", "P_CELSIUS0", "P_EPS0", "P_H", "P_K",
+    "P_Q", "P_U0"))
+_MATH_FUNCS = frozenset((
+    "abs", "acos", "acosh", "asin", "asinh", "atan", "atan2", "atanh", "ceil",
+    "cos", "cosh", "exp", "floor", "hypot", "int", "log", "log10", "max",
+    "min", "pow", "sin", "sinh", "sqrt", "tan", "tanh"))
+_RESERVED_PARAMS = frozenset(("temp", "tnom", "scale", "scalem", "freq", "time"))
+_ANALYSIS_NAMES = frozenset(("ac", "dc", "sp", "tran", "pss", "sweeppss",
+                             "noise", "stb", "xf", "fourier", "envlp"))
+_PRIMITIVE_NAMES = frozenset(("resistor", "res", "capacitor", "cap", "inductor",
+                              "ind", "vsource", "isource", "port", "bsource",
+                              "tline", "nmos", "pmos"))
+# Position-specific ban sets — every collision is an ERROR (no warning tier):
+# `m` is owned by the multiplier gate (already stricter than the official
+# implicit-parameter rule).
+_NAME_BAN = frozenset(_KEYWORDS | _CONSTANTS | _MATH_FUNCS | _ANALYSIS_NAMES
+                      | _PRIMITIVE_NAMES | {"analogmodel"})
+_NET_BAN = frozenset(_CONSTANTS | _MATH_FUNCS | _UG_KEYWORDS)
+_PARAM_BAN = frozenset(_RESERVED_PARAMS | _CONSTANTS | _MATH_FUNCS
+                       | _UG_KEYWORDS | {"analogmodel"})
+# Name-slot extraction shapes: any parenthesized net list after the head marks
+# a device instance (statements never carry one after subckt is handled
+# first); analysis lines (ac ac start=... / sp sp ports=[...]) have none.
+_INSTANCE_SHAPE = re.compile(r"^(\S+)\s*\(([^)]*)\)")
+_SUBCKT_DEF = re.compile(r"^(?:inline\s+)?subckt\s+(\S+)\s*\(([^)]*)\)", re.I)
+_MODEL_STMT = re.compile(r"^model\s+(\S+)", re.I)
+_PARAMETERS_STMT = re.compile(r"^parameters\s+(.+)$", re.I)
+_GLOBAL_STMT = re.compile(r"^global\s+(.+)$", re.I)
+# Legal unescaped name forms: a strict C identifier everywhere; net names
+# additionally a pure integer or a bang suffix. The backslash escape (the
+# official legacy compatibility back door) is banned outright.
+_IDENT_FORM = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_INT_NET_FORM = re.compile(r"^[0-9]+$")
+_BANG_NET_FORM = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*!$")
 _IDEAL_RCL_RANGE_TEXT = {"r": "0.1..1M ohm", "c": "1f..1u farad", "l": "0.1p..10n henry"}
 _RCL_UNIT = {"r": "ohm", "c": "farad", "l": "henry"}
 _RCL_INSTANCE = re.compile(r"^\s*(\w+)\s*\(([^)]*)\)\s*([A-Za-z_]\w*)\s+(.*)$")
@@ -199,6 +270,112 @@ def _mult_violation(value, lo, hi):
     return None
 
 
+def _collect_names(code):
+    """Every name-bearing slot as (kind, line, name) tuples — kinds: instance,
+    subckt, model, param, net. Extraction runs on the pre-comment body of each
+    code line (inline // tails stay in the line and their tokens must never
+    masquerade as names). The instance master slot is deliberately not
+    extracted: it names an external library object, not a hand-written name."""
+    out = []
+    for n, s in code:
+        body = s.split("//")[0]
+        sm = _SUBCKT_DEF.match(body)
+        if sm:
+            out.append(("subckt", n, sm.group(1)))
+            out.extend(("net", n, net) for net in sm.group(2).split())
+            continue
+        im = _INSTANCE_SHAPE.match(body)
+        if im:
+            out.append(("instance", n, im.group(1)))
+            out.extend(("net", n, net) for net in im.group(2).split())
+            continue
+        mm = _MODEL_STMT.match(body)
+        if mm:
+            out.append(("model", n, mm.group(1)))
+            continue
+        pm = _PARAMETERS_STMT.match(body)
+        if pm:
+            for tok in pm.group(1).split():
+                eq = tok.find("=")
+                if eq > 0:
+                    out.append(("param", n, tok[:eq]))
+            continue
+        gm = _GLOBAL_STMT.match(body)
+        if gm:
+            out.extend(("net", n, net) for net in gm.group(1).split())
+    return out
+
+
+def _describe_reserved(name):
+    """Which official list a banned name comes from (message detail)."""
+    if name in _RESERVED_PARAMS:
+        return "a reserved parameter (must not be declared)"
+    if name in _KEYWORDS or name in _UG_KEYWORDS:
+        return "a Spectre netlist keyword"
+    if name in _CONSTANTS:
+        return "a built-in math/physics constant"
+    if name in _MATH_FUNCS:
+        return "a built-in math function"
+    if name in _ANALYSIS_NAMES:
+        return "an analysis name"
+    if name in _PRIMITIVE_NAMES:
+        return "a built-in primitive name"
+    return "reserved (analogmodel)"
+
+
+# Message slot labels (reserved words use "parameter" for param slots,
+# identifiers use "parameter name" — the two message shapes differ).
+_SLOT_TEXT = {"instance": "instance name", "subckt": "subckt name",
+              "model": "model name", "net": "net name", "param": "parameter"}
+_IDENT_SLOT_TEXT = {"instance": "instance name", "subckt": "subckt name",
+                    "model": "model name", "net": "net name",
+                    "param": "parameter name"}
+
+
+def _check_reserved_words(code, parameters):
+    """Reserved-word collisions on name slots and swept-config keys — every
+    collision is an error, no tiers."""
+    errors = []
+    for kind, n, name in _collect_names(code):
+        ban = _NET_BAN if kind == "net" else _PARAM_BAN if kind == "param" else _NAME_BAN
+        if name in ban:
+            errors.append("naming: %s '%s' (line %d) is %s — rename it"
+                          % (_SLOT_TEXT[kind], name, n, _describe_reserved(name)))
+    if parameters is not None:
+        for name in parameters:
+            if name in _PARAM_BAN:
+                errors.append("naming: swept parameter '%s' is %s — rename it"
+                              % (name, _describe_reserved(name)))
+    return errors
+
+
+def _check_identifiers(code):
+    """Name-form errors: strict C identifiers everywhere, integer and bang
+    forms on net names only, the backslash escape banned outright."""
+    errors = []
+    for kind, n, name in _collect_names(code):
+        if _IDENT_FORM.fullmatch(name):
+            continue
+        if kind == "net" and (_INT_NET_FORM.fullmatch(name)
+                              or _BANG_NET_FORM.fullmatch(name)):
+            continue
+        if name.startswith("\\"):
+            errors.append("naming: %s '%s' (line %d) uses the backslash escape — "
+                          "a legacy compatibility back door, not allowed here; "
+                          "rename it" % (_IDENT_SLOT_TEXT[kind], name, n))
+            continue
+        if kind != "net" and name[0].isdigit():
+            errors.append("naming: %s '%s' (line %d) must begin with a letter or "
+                          "underscore (node names may be integers) — rename it"
+                          % (_IDENT_SLOT_TEXT[kind], name, n))
+            continue
+        errors.append("naming: %s '%s' (line %d) has an illegal form — only "
+                      "letters, digits and underscores fit a name (net names may "
+                      "add a bang suffix); rename it"
+                      % (_IDENT_SLOT_TEXT[kind], name, n))
+    return errors
+
+
 def check_netlist_format(text, parameters=None, template_name="template.scs",
                          rcl_ranges=None, mult_ranges=None, nf_warn=None):
     """Return (errors, warnings) for a Spectre netlist template.
@@ -216,6 +393,19 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
     unit_check = bool(cfg.get("unit_check", True))
     code = [(i + 1, s.strip()) for i, s in enumerate(text.splitlines())
             if s.strip() and not s.strip().startswith("//")]
+    # Size gates: past the hard cap the text is almost certainly a generated
+    # or flattened netlist mounted in the netlist_template slot — reject it
+    # before the regex passes see it.
+    if len(text) > TEMPLATE_MAX_BYTES:
+        errors.append("input: template %s is %d bytes, over the %d-byte pre-check "
+                      "limit — split the netlist with include statements (a "
+                      "hand-written template*.scs is typically a few KB)"
+                      % (template_name, len(text), TEMPLATE_MAX_BYTES))
+        return errors, warnings
+    if len(text) > TEMPLATE_WARN_BYTES:
+        warnings.append("format: template is %d bytes, above the %d-byte warning "
+                        "threshold — move large circuit definitions into separate "
+                        "files and include them" % (len(text), TEMPLATE_WARN_BYTES))
 
     if not any(re.match(r"^simulator\s+lang\s*=\s*spectre\b", s, re.I) for _, s in code):
         errors.append("format: missing 'simulator lang=spectre' declaration")
@@ -508,6 +698,9 @@ def check_netlist_format(text, parameters=None, template_name="template.scs",
                     errors.append("rcl: swept parameter %s value %r outside the ideal %s "
                                   "range %s (name starts with '%s')"
                                   % (name, value, kind.upper(), range_text, name[0]))
+
+    errors.extend(_check_reserved_words(code, parameters))
+    errors.extend(_check_identifiers(code))
 
     if template_name and not re.fullmatch(r"template[\w.-]*\.scs",
                                           os.path.basename(template_name)):

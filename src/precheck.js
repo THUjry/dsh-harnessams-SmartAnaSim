@@ -4,12 +4,16 @@
 // on the tool path: language format (lang declaration, SPICE-directive
 // rejection, LF/ASCII hygiene, @@P@@ placement — parameters statement plus
 // include statements whose path/section text sweeps, no scientific notation —
-// SI suffixes only), sweep-parameter presence (an undeclared @@temperature@@ is a
-// warning: the worker fills the default 27 degC), and the value gates (ideal
+// SI suffixes only, template size gates — warn above 10 KB, reject above
+// 100 KB), sweep-parameter presence (an undeclared @@temperature@@ is a
+// warning: the worker fills the default 27 degC), the value gates (ideal
 // R/C/L ranges on literals and parameter names — expressions at R/C/L value
 // positions are rejected, the nf range with its warning threshold, m rejected
 // by default with a same-line // m-release comment as the release, geometry
-// unit suffixes).
+// unit suffixes), and the name gates (reserved-word collisions from the
+// merged official tables — all errors — plus identifier name forms: C
+// identifiers everywhere, integer and bang forms on net names only, the
+// backslash escape banned outright).
 // check parameters resolve through the same chain the retired
 // python assembly layer used: built-in defaults <- <workspace>/.harnessams/
 // check_params.json <- the calling session's confirmed table in sessions.json
@@ -151,6 +155,55 @@ const MULT_ATTR_RE = { nf: /\bnf\s*=\s*(\S+)/g, m: /\bm\s*=\s*(\S+)/g }
 // line never releases anything.
 const M_USAGE = /\bm\s*=/
 const M_RELEASE = /\/\/.*\bm-release\b/
+// Template-size gates: a hand-written template*.scs is typically a few KB —
+// past the warn line large definitions belong in their own included files,
+// and past the hard cap the file is almost certainly a generated or flattened
+// netlist mounted in the netlist_template slot.
+const TEMPLATE_WARN_BYTES = 10 * 1024
+const TEMPLATE_MAX_BYTES = 100 * 1024
+// Reserved-word tables, the merged official lists (the root repo's
+// reserved-words research note under dev/todo): Reference netlist keywords (39 plus
+// the prot/unprot abbreviations, both cases), the User-Guide keyword subset
+// that extends to net/parameter names (39 minus the seven net-legal words),
+// built-in math/physics constants, math functions, the reserved parameters
+// (must not be declared), analogmodel, and the avoid-surface approximations
+// (known analysis and primitive names on name slots — the shipped `ac ac` /
+// `sp sp` analysis statements carry no parenthesized net list, so their
+// convention never reaches the instance-name extraction). Membership is
+// case-sensitive: the manuals list the words "case specified".
+const KEYWORDS = new Set(['altergroup', 'correlate', 'else', 'end', 'ends', 'export', 'for', 'function', 'global', 'ic', 'if', 'in', 'input', 'inline', 'invisible', 'library', 'local', 'march', 'model', 'nodeset', 'out', 'output', 'parameters', 'paramset', 'plot', 'print', 'protect', 'pwr', 'real', 'return', 'save', 'sens', 'statistics', 'subckt', 'to', 'truncate', 'unprotect', 'vary', 'visible', 'prot', 'PROT', 'unprot', 'UNPROT'])
+const UG_KEYWORDS = new Set(['altergroup', 'correlate', 'else', 'end', 'ends', 'export', 'for', 'function', 'global', 'ic', 'if', 'inline', 'library', 'local', 'march', 'model', 'nodeset', 'parameters', 'paramset', 'plot', 'print', 'protect', 'pwr', 'real', 'return', 'save', 'sens', 'statistics', 'subckt', 'to', 'truncate', 'vary', 'visible'])
+const CONSTANTS = new Set(['M_1_PI', 'M_2_PI', 'M_2_SQRTPI', 'M_DEGPERRAD', 'M_E', 'M_LN10', 'M_LN2', 'M_LOG10E', 'M_LOG2E', 'M_PI', 'M_PI_2', 'M_PI_4', 'M_SQRT1_2', 'M_SQRT2', 'M_TWO_PI', 'P_C', 'P_CELSIUS0', 'P_EPS0', 'P_H', 'P_K', 'P_Q', 'P_U0'])
+const MATH_FUNCS = new Set(['abs', 'acos', 'acosh', 'asin', 'asinh', 'atan', 'atan2', 'atanh', 'ceil', 'cos', 'cosh', 'exp', 'floor', 'hypot', 'int', 'log', 'log10', 'max', 'min', 'pow', 'sin', 'sinh', 'sqrt', 'tan', 'tanh'])
+const RESERVED_PARAMS = new Set(['temp', 'tnom', 'scale', 'scalem', 'freq', 'time'])
+const ANALYSIS_NAMES = new Set(['ac', 'dc', 'sp', 'tran', 'pss', 'sweeppss', 'noise', 'stb', 'xf', 'fourier', 'envlp'])
+const PRIMITIVE_NAMES = new Set(['resistor', 'res', 'capacitor', 'cap', 'inductor', 'ind', 'vsource', 'isource', 'port', 'bsource', 'tline', 'nmos', 'pmos'])
+// Position-specific ban sets — every collision is an ERROR (no warning tier):
+// name slots take the Reference keyword ban plus constants, math functions,
+// analogmodel and the avoid-surface lists; net slots take the constants, math
+// functions and User-Guide keywords (in/out/input/output/invisible/unprotect/
+// visible stay legal as net names per both manuals); parameter declarations
+// add the reserved parameters. `m` is owned by the multiplier gate above
+// (already stricter than the official implicit-parameter rule).
+const NAME_BAN = new Set([...KEYWORDS, ...CONSTANTS, ...MATH_FUNCS, ...ANALYSIS_NAMES, ...PRIMITIVE_NAMES, 'analogmodel'])
+const NET_BAN = new Set([...CONSTANTS, ...MATH_FUNCS, ...UG_KEYWORDS])
+const PARAM_BAN = new Set([...RESERVED_PARAMS, ...CONSTANTS, ...MATH_FUNCS, ...UG_KEYWORDS, 'analogmodel'])
+// Name-slot extraction shapes: any parenthesized net list after the head marks
+// a device instance (statements never carry one after subckt is handled
+// first); analysis lines (ac ac start=... / sp sp ports=[...]) have none.
+const INSTANCE_SHAPE = /^(\S+)\s*\(([^)]*)\)/
+const SUBCKT_DEF = /^(?:inline\s+)?subckt\s+(\S+)\s*\(([^)]*)\)/i
+const MODEL_STMT = /^model\s+(\S+)/i
+const PARAMETERS_STMT = /^parameters\s+(.+)$/i
+const GLOBAL_STMT = /^global\s+(.+)$/i
+// Legal unescaped name forms (User Guide identifier rules): a strict C
+// identifier everywhere; net names additionally a pure integer (leading zeros
+// significant) or a bang suffix (vdd!). The backslash escape — the official
+// legacy compatibility back door — is banned outright; every other form
+// (unescaped '-', '$', '@', blanks, tabs, punctuation) is an error.
+const IDENT_FORM = /^[A-Za-z_][A-Za-z0-9_]*$/
+const INT_NET_FORM = /^[0-9]+$/
+const BANG_NET_FORM = /^[A-Za-z_][A-Za-z0-9_]*!$/
 // Scientific notation anywhere on a code line (comments already stripped):
 // number-shaped only — the lookbehind keeps identifier tails (a net named
 // 'n1e5') out of the match, so '1e-15', '2.5e-4' and '1e+03' all flag.
@@ -246,6 +299,9 @@ function checkLanguage(text, raw, code, templateName) {
     errors.push(`format: CRLF line endings on ${n} line(s) — the netlist must be LF-only`)
   }
   if (text && !text.endsWith('\n')) warnings.push('format: the netlist does not end with a newline')
+  if (text.length > TEMPLATE_WARN_BYTES) {
+    warnings.push(`format: template is ${text.length} bytes, above the ${TEMPLATE_WARN_BYTES}-byte warning threshold — move large circuit definitions into separate files and include them`)
+  }
   for (let i = 0; i < raw.length; i++) {
     const line = raw[i]
     const ctrl = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.exec(line)
@@ -516,6 +572,99 @@ function checkValues(code, config, params) {
   return { errors, warnings }
 }
 
+// ---- name-slot extraction (reserved-word + identifier families) ---------------
+
+// Every name-bearing slot as { kind, n, name } — kinds: instance, subckt,
+// model, param, net. Extraction runs on the pre-comment body of each code
+// line: inline // tails stay in l.s (analyzeLines drops only whole-line
+// comments), and tokens from a comment tail must never masquerade as names.
+// The instance master slot (the primitive/model reference after the net
+// list) is deliberately NOT extracted: it names an external library object,
+// not a hand-written name.
+function collectNames(code) {
+  const out = []
+  for (const l of code) {
+    const body = l.s.includes('//') ? l.s.slice(0, l.s.indexOf('//')) : l.s
+    const sm = SUBCKT_DEF.exec(body)
+    if (sm) {
+      out.push({ kind: 'subckt', n: l.n, name: sm[1] })
+      for (const net of sm[2].trim().split(/\s+/)) if (net) out.push({ kind: 'net', n: l.n, name: net })
+      continue
+    }
+    const im = INSTANCE_SHAPE.exec(body)
+    if (im) {
+      out.push({ kind: 'instance', n: l.n, name: im[1] })
+      for (const net of im[2].trim().split(/\s+/)) if (net) out.push({ kind: 'net', n: l.n, name: net })
+      continue
+    }
+    const mm = MODEL_STMT.exec(body)
+    if (mm) { out.push({ kind: 'model', n: l.n, name: mm[1] }); continue }
+    const pm = PARAMETERS_STMT.exec(body)
+    if (pm) {
+      for (const tok of pm[1].trim().split(/\s+/)) {
+        const eq = tok.indexOf('=')
+        if (eq > 0) out.push({ kind: 'param', n: l.n, name: tok.slice(0, eq) })
+      }
+      continue
+    }
+    const gm = GLOBAL_STMT.exec(body)
+    if (gm) {
+      for (const net of gm[1].trim().split(/\s+/)) if (net) out.push({ kind: 'net', n: l.n, name: net })
+    }
+  }
+  return out
+}
+
+// ---- family: reserved words ----------------------------------------------------
+
+// Which official list a banned name comes from (message detail).
+function describeReserved(name) {
+  if (RESERVED_PARAMS.has(name)) return 'a reserved parameter (must not be declared)'
+  if (KEYWORDS.has(name) || UG_KEYWORDS.has(name)) return 'a Spectre netlist keyword'
+  if (CONSTANTS.has(name)) return 'a built-in math/physics constant'
+  if (MATH_FUNCS.has(name)) return 'a built-in math function'
+  if (ANALYSIS_NAMES.has(name)) return 'an analysis name'
+  if (PRIMITIVE_NAMES.has(name)) return 'a built-in primitive name'
+  return 'reserved (analogmodel)'
+}
+
+function checkReservedWords(code, config) {
+  const errors = []
+  const slotText = { instance: 'instance name', subckt: 'subckt name', model: 'model name', net: 'net name', param: 'parameter' }
+  for (const { kind, n, name } of collectNames(code)) {
+    const ban = kind === 'net' ? NET_BAN : kind === 'param' ? PARAM_BAN : NAME_BAN
+    if (ban.has(name)) errors.push(`naming: ${slotText[kind]} '${name}' (line ${n}) is ${describeReserved(name)} — rename it`)
+  }
+  const parameters = config && typeof config.parameters === 'object' && config.parameters ? config.parameters : null
+  if (parameters) {
+    for (const name of Object.keys(parameters)) {
+      if (PARAM_BAN.has(name)) errors.push(`naming: swept parameter '${name}' is ${describeReserved(name)} — rename it`)
+    }
+  }
+  return { errors, warnings: [] }
+}
+
+// ---- family: identifier forms ----------------------------------------------------
+
+function checkIdentifiers(code) {
+  const errors = []
+  const slotText = { instance: 'instance name', subckt: 'subckt name', model: 'model name', net: 'net name', param: 'parameter name' }
+  for (const { kind, n, name } of collectNames(code)) {
+    if (IDENT_FORM.test(name)) continue
+    if (kind === 'net' && (INT_NET_FORM.test(name) || BANG_NET_FORM.test(name))) continue
+    if (name.startsWith('\\')) {
+      errors.push(`naming: ${slotText[kind]} '${name}' (line ${n}) uses the backslash escape — a legacy compatibility back door, not allowed here; rename it`)
+      continue
+    }
+    if (kind !== 'net' && /^[0-9]/.test(name)) {
+      errors.push(`naming: ${slotText[kind]} '${name}' (line ${n}) must begin with a letter or underscore (node names may be integers) — rename it`)
+      continue
+    }
+    errors.push(`naming: ${slotText[kind]} '${name}' (line ${n}) has an illegal form — only letters, digits and underscores fit a name (net names may add a bang suffix); rename it`)
+  }
+  return { errors, warnings: [] }
+}
+
 // ---- orchestrator --------------------------------------------------------------
 
 const dedup = (arr) => [...new Set(arr)]
@@ -538,6 +687,13 @@ export async function runPreCheck(runDir, sessionId) {
   const inputErrors = []
   if (!config) inputErrors.push(`input: sweep_config.json not found or not valid JSON in ${dir}`)
   if (!templateRes.ok) inputErrors.push(`input: template file not found: ${templateName} (sweep_config.netlist_template names it)`)
+  // Size gate (the template is already in memory at this point): a hand-
+  // written template*.scs is typically a few KB, so a file past the hard cap
+  // is almost certainly a generated or flattened netlist mounted in the
+  // netlist_template slot — reject it before the regex families see it.
+  if (templateRes.ok && templateRes.text.length > TEMPLATE_MAX_BYTES) {
+    inputErrors.push(`input: template ${templateName} is ${templateRes.text.length} bytes, over the ${TEMPLATE_MAX_BYTES}-byte pre-check limit — split the netlist with include statements (a hand-written template*.scs is typically a few KB)`)
+  }
   if (inputErrors.length) {
     return { ok: false, errors: inputErrors, warnings: [], template: templateName, params_source: chain.source, checks: [] }
   }
@@ -550,6 +706,8 @@ export async function runPreCheck(runDir, sessionId) {
     ['language', () => checkLanguage(text, raw, code, templateName)],
     ['params', () => checkSweepParams(code, config)],
     ['values', () => checkValues(code, config, chain.params)],
+    ['reserved', () => checkReservedWords(code, config)],
+    ['identifiers', () => checkIdentifiers(code)],
   ]
   const checks = await Promise.all(families.map(([name, fn]) => Promise.resolve().then(() => {
     const t0 = Date.now()

@@ -268,6 +268,35 @@ def test_m_policy_include_exemption_nf_warn_mirrors():
     assert warnings_of(t_nf, nf_warn=80) == [], warnings_of(t_nf, nf_warn=80)
 
 
+def test_reserved_identifier_size_mirrors():
+    """Mirror guards for the python-local name tables and gates: reserved-word
+    collisions, name forms (escape ban), and the template size gates (the
+    shared contract is owned by tests/precheck.test.mjs)."""
+    # reserved: keyword instance name, reserved parameter declared, config key
+    t = "simulator lang=spectre\nsave (a b) resistor r=1k\nparameters temp=27\n"
+    errs = errors_of(t)
+    assert any(e.startswith("naming:") and "'save'" in e for e in errs), errs
+    assert any(e.startswith("naming:") and "'temp'" in e for e in errs), errs
+    assert any(e.startswith("naming:") and "'time'" in e
+               for e in errors_of("simulator lang=spectre\nR1 (a b) resistor r=1k\n",
+                                  parameters={"time": [1]}))
+    # forms: bang and integer nets legal, the backslash escape banned
+    errs, warns = check_netlist_format(
+        "simulator lang=spectre\nglobal vdd!\nR1 (vdd! 0) resistor r=1k\nR2 (07 7) resistor r=2k\n")
+    assert errs == [] and warns == [], (errs, warns)
+    t2 = "simulator lang=spectre\n\\2N2222 (a b) resistor r=1k\n"
+    assert any(e.startswith("naming:") and "backslash" in e for e in errors_of(t2)), errors_of(t2)
+    # size gates: ~11 KB warns with every family still running, past the cap
+    # it is a structured input rejection
+    big = "simulator lang=spectre\n" + "R1 (a b) resistor r=1k\n" * 500
+    errs, warns = check_netlist_format(big)
+    assert errs == [] and any("warning threshold" in w for w in warns), (errs, warns)
+    huge = "simulator lang=spectre\n" + "R1 (a b) resistor r=1k\n" * 5000
+    errs, warns = check_netlist_format(huge)
+    assert any(e.startswith("input:") and "102400" in e for e in errs), errs
+    assert errs == [e for e in errs if e.startswith("input:")], errs
+
+
 def test_template_naming_family():
     """template*.scs family names pass silently.
 
@@ -300,6 +329,7 @@ def main():
         test_check_params_config()
         test_check_params_session_layer()
         test_m_policy_include_exemption_nf_warn_mirrors()
+        test_reserved_identifier_size_mirrors()
         test_template_naming_family()
     finally:
         os.chdir(old_cwd)

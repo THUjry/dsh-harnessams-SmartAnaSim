@@ -58,7 +58,7 @@ test('new-style RC netlist passes clean', async () => {
   assert.deepEqual(r.warnings, [])
   assert.equal(r.template, 'template.scs')
   assert.equal(r.params_source, 'builtin')
-  assert.deepEqual(r.checks.map((c) => c.name), ['language', 'params', 'values'])
+  assert.deepEqual(r.checks.map((c) => c.name), ['language', 'params', 'values', 'reserved', 'identifiers'])
 })
 
 test('the shipped sky130 template shape passes clean', async () => {
@@ -315,6 +315,88 @@ test('m is rejected by default; a same-line // m-release comment releases it', a
   const expr = await runPreCheck(makeRun(
     'simulator lang=spectre\nparameters k=2\nR1 (a b) resistor r=1k m=(2*k)\n', { parameters: {} }), null)
   assert.ok(expr.errors.some((e) => e.startsWith('mult:') && e.includes('m-release')), expr.errors)
+})
+
+test('reserved words: every name-slot collision is an error, shipped shapes stay clean', async () => {
+  // keywords (and the prot abbreviation) on instance names, a keyword as a
+  // subckt name, a constant as a model name
+  const kw = await runPreCheck(makeRun(
+    'simulator lang=spectre\nsave (a b) resistor r=1k\nprot (a b) resistor r=1k\n'
+    + 'subckt parameters (x y)\nends parameters\nmodel M_PI bsim4\n',
+    { parameters: {} }), null)
+  const kwErrs = kw.errors.filter((e) => e.startsWith('naming:'))
+  assert.ok(kwErrs.some((e) => e.includes("instance name 'save'") && e.includes('keyword')), kwErrs)
+  assert.ok(kwErrs.some((e) => e.includes("instance name 'prot'")), kwErrs)
+  assert.ok(kwErrs.some((e) => e.includes("subckt name 'parameters'")), kwErrs)
+  assert.ok(kwErrs.some((e) => e.includes("model name 'M_PI'") && e.includes('constant')), kwErrs)
+
+  // reserved parameters must never be declared — parameters statement and
+  // sweep-config keys are both declarations
+  const decl = await runPreCheck(makeRun(
+    'simulator lang=spectre\nparameters temp=27 x=@@x@@\nR1 (a b) resistor r=1k\n',
+    { parameters: { x: [1] } }), null)
+  assert.ok(decl.errors.some((e) => e.includes("parameter 'temp'") && e.includes('reserved parameter')), decl.errors)
+  const cfg = await runPreCheck(makeRun(
+    'simulator lang=spectre\nparameters x=@@x@@\nR1 (a b) resistor r=1k\n',
+    { parameters: { x: [1], time: [1] } }), null)
+  assert.ok(cfg.errors.some((e) => e.includes("'time'") && e.startsWith('naming:')), cfg.errors)
+
+  // a math function as a net name; math function, analysis name and
+  // primitive name as instance names
+  const net = await runPreCheck(makeRun(
+    'simulator lang=spectre\nR1 (max b) resistor r=1k\n', { parameters: {} }), null)
+  assert.ok(net.errors.some((e) => e.includes("net name 'max'")), net.errors)
+  const inst = await runPreCheck(makeRun(
+    'simulator lang=spectre\nsin (a b) resistor r=1k\ntran (a b) resistor r=1k\nresistor (a b) resistor r=1k\n',
+    { parameters: {} }), null)
+  assert.ok(inst.errors.some((e) => e.includes("instance name 'sin'") && e.includes('math function')), inst.errors)
+  assert.ok(inst.errors.some((e) => e.includes("instance name 'tran'") && e.includes('analysis name')), inst.errors)
+  assert.ok(inst.errors.some((e) => e.includes("instance name 'resistor'") && e.includes('primitive')), inst.errors)
+
+  // in/out stay legal as net names (both manuals carve them out) — the
+  // shipped sky130 shape keeps passing clean
+  const ok = await runPreCheck(templateTStyle, null)
+  assert.equal(ok.ok, true, JSON.stringify(ok))
+})
+
+test('name forms: C identifiers, integer and bang nets legal; escapes and specials rejected', async () => {
+  // bang and pure integers are the official net-name relaxations (global
+  // nets included); leading zeros are significant, so 07 and 7 coexist
+  const legal = await runPreCheck(makeRun(
+    'simulator lang=spectre\nglobal vdd!\nR1 (vdd! 0) resistor r=1k\nR2 (07 7) resistor r=2k\n',
+    { parameters: {} }), null)
+  assert.equal(legal.ok, true, JSON.stringify(legal))
+
+  // unescaped specials on a net, digit-leading and bang instance names, an
+  // escaped name (the banned legacy back door), a $-parameter
+  const bad = await runPreCheck(makeRun(
+    'simulator lang=spectre\nR1 (my-net b) resistor r=1k\n2N2222 (a b) resistor r=1k\n'
+    + 'vdd! (a b) resistor r=1k\n\\2N2222 (a b) resistor r=1k\nparameters $foo=1\n',
+    { parameters: {} }), null)
+  const formErrs = bad.errors.filter((e) => e.startsWith('naming:'))
+  assert.ok(formErrs.some((e) => e.includes("net name 'my-net'")), formErrs)
+  assert.ok(formErrs.some((e) => e.includes("instance name '2N2222'") && e.includes('letter or underscore')), formErrs)
+  assert.ok(formErrs.some((e) => e.includes("instance name 'vdd!'")), formErrs)
+  assert.ok(formErrs.some((e) => e.includes("'\\2N2222'") && e.includes('backslash escape')), formErrs)
+  assert.ok(formErrs.some((e) => e.includes("parameter name '$foo'")), formErrs)
+  assert.equal(bad.ok, false)
+})
+
+test('template size gates: warn above 10 KB, reject above 100 KB', async () => {
+  // an ~11 KB clean template warns but still runs every family
+  const big = 'simulator lang=spectre\n' + 'R1 (a b) resistor r=1k\n'.repeat(500)
+  const warn = await runPreCheck(makeRun(big, { parameters: {} }), null)
+  assert.equal(warn.ok, true, JSON.stringify(warn))
+  assert.ok(warn.warnings.some((w) => w.startsWith('format:') && w.includes('11523 bytes') && w.includes('10240-byte warning threshold')), warn.warnings)
+  assert.equal(warn.checks.length, 5)
+
+  // past the hard cap the run dies as a structured input error before any
+  // family runs
+  const huge = 'simulator lang=spectre\n' + 'R1 (a b) resistor r=1k\n'.repeat(5000)
+  const reject = await runPreCheck(makeRun(huge, { parameters: {} }), null)
+  assert.equal(reject.ok, false)
+  assert.ok(reject.errors.some((e) => e.startsWith('input:') && e.includes('102400') && e.includes('include')), reject.errors)
+  assert.deepEqual(reject.checks, [])
 })
 
 test('prefix heuristic: C-initial config values, expressions rejected, no duplicates', async () => {

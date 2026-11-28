@@ -4,12 +4,16 @@
 // for one: language format (simulator lang=spectre, no SPICE directives,
 // LF/ASCII, @@P@@ placeholders on the parameters statement and on include
 // statements (path/section text sweeps), no scientific notation — SI suffixes
-// only), sweep-parameter presence (an undeclared @@temperature@@ is a warning:
-// the worker fills 27 degC), and the value gates (ideal R/C/L ranges on
+// only, template size gates — warn above 10 KB, reject above 100 KB),
+// sweep-parameter presence (an undeclared @@temperature@@ is a warning:
+// the worker fills 27 degC), the value gates (ideal R/C/L ranges on
 // literals and parameter names — expressions at R/C/L value positions are
 // rejected, the nf range with its warning threshold, m rejected by default
 // with a same-line // m-release comment as the release, geometry unit
-// suffixes) resolved through the workspace check-parameter chain
+// suffixes), and the name gates (reserved-word collisions from the merged
+// official tables — all errors — and identifier name forms: C identifiers
+// everywhere, integer and bang nets only, the backslash escape banned)
+// resolved through the workspace check-parameter chain
 // (project check_params.json / the calling session's confirmed table). Pure JS
 // checks — nothing executes, nothing is written. A managed sweep flow stages
 // run directories only after running this same check automatically, so a
@@ -34,7 +38,12 @@ export function spectreTools(ctx = {}) {
         + 'ranges on literals and parameter names — expressions at R/C/L value positions are '
         + 'rejected; nf range with a warning threshold above it (nf_warn, default 50), m '
         + 'rejected by default — a // m-release comment on the m= line releases it, then the '
-        + 'range gate applies; u/n geometry suffixes; project check_params.json '
+        + 'range gate applies; u/n geometry suffixes; plus the name gates (reserved words '
+        + 'from the merged official tables — keywords, constants, math functions, reserved '
+        + 'parameters, analysis and primitive names — are errors on name slots; names must '
+        + 'be C identifiers, integer and bang forms allowed on net names only, the '
+        + 'backslash escape banned) and the template size gates (warning above 10 KB, '
+        + 'reject above 100 KB); project check_params.json '
         + 'plus the calling session\'s confirmed table). sweep_config.json shape: parameters is '
         + 'a dict of value lists (SI-suffixed strings for swept R/C/L values, plain strings for '
         + 'include path/section sweeps), plus sweep_mode '
